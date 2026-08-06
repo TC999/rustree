@@ -8,6 +8,7 @@
 #![allow(dead_code)]
 
 mod globals;
+mod strverscmp;
 mod tree;
 
 fn main() {}
