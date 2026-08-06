@@ -158,7 +158,7 @@ impl Default for Flags {
 /* =====================================================================
  * struct _info —— 对应 tree.h 中的 struct _info
  * ===================================================================== */
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Info {
     pub name: String, // C: char *name
     pub lnk: Option<String>, // C: char *lnk（符号链接目标，NULL 表示非链接）
@@ -195,7 +195,7 @@ pub struct Info {
 /* =====================================================================
  * struct extensions —— 对应 color.c 的 struct extensions（颜色扩展名表）
  * ===================================================================== */
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Extensions {
     pub ext: String, // 扩展名（如 "bat"）
     pub term_flg: String, // 终端颜色代码
@@ -225,7 +225,7 @@ pub struct Linedraw {
  * struct meta_ids —— 对应 color.c 的 struct meta_ids（元数据 ID 表）
  * 原 C 源码中该结构体未实际使用，仅为头文件定义。
  * ===================================================================== */
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct MetaIds {
     pub name: String,
     pub term_flg: String,
@@ -234,7 +234,7 @@ pub struct MetaIds {
 /* =====================================================================
  * struct pattern —— 对应 filter.c 的 struct pattern（过滤模式）
  * ===================================================================== */
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Pattern {
     pub pattern: String, // 模式字符串
     pub relative: i32, // 是否为相对模式（不含 '/'）
@@ -244,7 +244,7 @@ pub struct Pattern {
 /* =====================================================================
  * struct ignorefile —— 对应 filter.c 的 struct ignorefile（gitignore 文件）
  * ===================================================================== */
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Ignorefile {
     pub path: String, // 基准路径
     pub remove: Option<Box<Pattern>>, // 移除模式链表
@@ -255,7 +255,7 @@ pub struct Ignorefile {
 /* =====================================================================
  * struct comment —— 对应 info.c 的 struct comment（.info 注释块）
  * ===================================================================== */
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Comment {
     pub pattern: Option<Box<Pattern>>, // 关联的模式链表
     pub desc: Vec<String>, // 注释描述行（C: char **desc）
@@ -265,7 +265,7 @@ pub struct Comment {
 /* =====================================================================
  * struct infofile —— 对应 info.c 的 struct infofile（.info 文件）
  * ===================================================================== */
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Infofile {
     pub path: String,
     pub comments: Option<Box<Comment>>, // 注释块链表
@@ -497,3 +497,4 @@ pub fn read_link(path: &str) -> io::Result<String> {
  * /* strverscmp.c（仅非 Linux 平台在 C 中使用，Rust 版始终需要）*/
  * int strverscmp(const char *s1, const char *s2);
  * ===================================================================== */
+
