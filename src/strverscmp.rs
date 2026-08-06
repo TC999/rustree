@@ -20,7 +20,7 @@ const LEN: i32 = 3;
 
 // C 的 isdigit(c)
 fn is_digit(c: u8) -> bool {
-    c >= b'0' && c <= b'9'
+    (b'0'..=b'9').contains(&c)
 }
 
 // 状态转换表（与 C 源码逐项对应）。
@@ -71,7 +71,8 @@ pub fn strverscmp(s1: &str, s2: &str) -> i32 {
     let mut c2: u8 = *p2.first().unwrap_or(&0);
 
     // C: state = S_N | ((c1 == '0') + (isdigit (c1) != 0));
-    let mut state = S_N | ((c1 == b'0') as i32) + (is_digit(c1) as i32);
+    // 注意：加法优先级高于按位或，加括号明确
+    let mut state = S_N | (((c1 == b'0') as i32) + (is_digit(c1) as i32));
 
     // C: while ((diff = c1 - c2) == 0 && c1 != '\0')
     let mut diff = c1 as i32 - c2 as i32;
