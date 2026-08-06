@@ -10,5 +10,6 @@
 mod globals;
 mod strverscmp;
 mod tree;
+mod util;
 
 fn main() {}
