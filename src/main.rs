@@ -8,6 +8,7 @@
 #![allow(dead_code)]
 
 mod globals;
+mod hash;
 mod strverscmp;
 mod tree;
 mod util;
