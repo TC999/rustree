@@ -25,3 +25,6 @@ rustc-ice-*.txt
 
 # original tree command c source
 tree
+
+# AI terminal
+.reasonix
