@@ -3,9 +3,20 @@ name = "rustree"
 version = "0.1.0"
 edition = "2021"
 
+# 依赖声明理由：
+#   tree 命令的 C 源码使用了大量 std 无法提供的系统能力，必须使用 libc FFI：
+#     1. getpwuid()/getgrgid()   —— 将 uid/gid 解析为用户名/组名（hash.c）
+#     2. getxattr()/listxattr()  —— SELinux 上下文与 ACL 检测（tree.c，仅 Linux）
+#     3. setlocale()/nl_langinfo() —— locale 与字符集检测（tree.c）
+#     4. gethostname()           —— OSC 8 超链接的 authority（tree.c）
+#     5. strftime()/localtime_r() —— do_date() 的日期格式化（tree.c）
+#   libc 是事实上的标准 FFI 绑定 crate，非第三方功能库。
 [dependencies]
-lazy_static = "1.4"
+libc = "0.2"
 
 [[bin]]
 name = "tree"
 path = "src/main.rs"
+
+[profile.release]
+opt-level = 2

@@ -1,585 +1,499 @@
 // 文件路径：src/tree.rs
 // 对应 C 源文件：tree.h
-// 公共定义、结构体、常量和函数原型
+// 公共定义、结构体、常量与类型别名。
+// 原 C 头文件中的函数原型不在此实现，其实现分布在各自对应模块中，
+// 此处保留为注释块以便对照。
 
-use std::time::UNIX_EPOCH;
+use std::io;
 
-// 保留原有 C 宏常量
-const MINIT: usize = 30;  // 初始分配的目录项数量
-const MINC: usize = 20;   // 分配增量
+/* =====================================================================
+ * 宏常量（对应 tree.h 中的 #define）
+ * ===================================================================== */
 
-/// 保持原有 C 宏：UNUSED(x) - 用于标记未使用的参数
-#[inline(always)]
-fn unused<T>(_x: T) {
-    // 在 Rust 中，未使用的变量会在编译时警告
-    // 这里显式忽略以保持与 C 代码等价
-}
+// 路径缓冲上限（tree.h: #ifndef PATH_MAX / #define PATH_MAX 4096）
+pub const PATH_MAX: usize = 4096;
 
-/// Flags 结构体对应 C 中的 struct Flags
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+// 全局 .info 注释文件的默认路径（tree.h: #define INFO_PATH）
+pub const INFO_PATH: &str = "/usr/share/finfo/global_info";
+
+// 初始分配的目录项数量（tree.h: #define MINIT 30）
+pub const MINIT: usize = 30;
+
+// 目录项数组的分配增量（tree.h: #define MINC 20）
+pub const MINC: usize = 20;
+
+// 半年秒数，用于 do_date() 判断时间是否"过近"（tree.c: #define SIXMONTHS）
+pub const SIXMONTHS: i64 = 6 * 31 * 24 * 60 * 60;
+
+// tree.h 中 __linux__ 分支的宏：STDDATA_FD 环境变量名与默认 fd 号
+#[cfg(target_os = "linux")]
+pub const ENV_STDDATA_FD: &str = "STDDATA_FD";
+#[cfg(target_os = "linux")]
+pub const STDDATA_FILENO: i32 = 3;
+
+/* ---------------------------------------------------------------------
+ * 文件模式位常量（原 C 来自 <sys/stat.h>，POSIX 标准值）
+ * --------------------------------------------------------------------- */
+pub const S_IFMT: u32 = 0o170000; // 类型掩码
+pub const S_IFSOCK: u32 = 0o140000; // 套接字
+pub const S_IFLNK: u32 = 0o120000; // 符号链接
+pub const S_IFREG: u32 = 0o100000; // 普通文件
+pub const S_IFBLK: u32 = 0o060000; // 块设备
+pub const S_IFDIR: u32 = 0o040000; // 目录
+pub const S_IFCHR: u32 = 0o020000; // 字符设备
+pub const S_IFIFO: u32 = 0o010000; // FIFO
+pub const S_ISUID: u32 = 0o004000; // set-user-ID
+pub const S_ISGID: u32 = 0o002000; // set-group-ID
+pub const S_ISVTX: u32 = 0o001000; // sticky 位
+pub const S_IRWXU: u32 = 0o700; // 属主 rwx
+pub const S_IRUSR: u32 = 0o400; // 属主 r
+pub const S_IWUSR: u32 = 0o200; // 属主 w
+pub const S_IXUSR: u32 = 0o100; // 属主 x
+pub const S_IRWXG: u32 = 0o070; // 组 rwx
+pub const S_IRGRP: u32 = 0o040; // 组 r
+pub const S_IWGRP: u32 = 0o020; // 组 w
+pub const S_IXGRP: u32 = 0o010; // 组 x
+pub const S_IRWXO: u32 = 0o007; // 其他 rwx
+pub const S_IROTH: u32 = 0o004; // 其他 r
+pub const S_IWOTH: u32 = 0o002; // 其他 w
+pub const S_IXOTH: u32 = 0o001; // 其他 x
+
+/* ---------------------------------------------------------------------
+ * 类型别名
+ * --------------------------------------------------------------------- */
+
+// C: struct _info **(*getfulltree)(char *d, u_long lev, dev_t dev, off_t *size, char **err)
+// 读取完整目录树的函数指针类型（--fromfile/--fromtabfile 会替换它）
+pub type Getfulltree =
+    fn(d: &str, lev: u64, dev: u64, size: &mut i64, err: &mut Option<String>) -> Option<Vec<Info>>;
+
+// C: int (*sortfunc)(struct _info **, struct _info **)
+// 顶层排序比较器类型（qsort 比较器，返回负/零/正）
+pub type SortFn = fn(a: &Info, b: &Info) -> i32;
+
+/* =====================================================================
+ * struct Flags —— 对应 tree.c / tree.h 中的全局选项标志
+ * ===================================================================== */
+// 字段名刻意与 C 源码 struct Flags 保持一致（D/F/H/J/N/Q/R/X 为大写单字母），
+// 因此关闭 snake_case 命名检查。
+#[allow(non_snake_case)]
+#[derive(Debug, Clone, Copy)]
 pub struct Flags {
-    // TODO: 将这些单字母标志改为更有意义的名称
-    pub a: bool,   // all: 显示隐藏文件
-    pub c: bool,   // color: 使用颜色
-    pub d: bool,   // dir: 仅显示目录
-    pub f: bool,   // first: 文件在前
-    pub g: bool,   // group: 显示组
-    pub h: bool,   // human-readable: 人类可读的文件大小
-    pub l: bool,   // link: 显示符号链接
-    pub p: bool,   // prune: 剪枝模式
-    pub q: bool,   // quote: 用引号包围名称
-    pub s: bool,   // size: 显示文件大小
-    pub u: bool,   // uid: 显示用户 ID
-    pub D: bool,   // date: 显示修改日期
-    pub F: bool,   // file-type: 显示文件类型标记
-    pub H: bool,   // hyper: 超链接模式
-    pub J: bool,   // json: JSON 输出
-    pub N: bool,   // newline: 显示换行
-    pub Q: bool,   // quote-again: 用引号包围名称
-    pub R: bool,   // recurse: 递归
-    pub X: bool,   // xml: XML 输出
-    pub inode: bool,  // inode: 显示 inode 编号
-    pub dev: bool,    // dev: 显示设备号
-    pub si: bool,     // si: 使用 SI 单位
-    pub du: bool,     // du: 显示磁盘使用量
-    pub prune: bool,  // prune: 剪枝
-    pub hyper: bool,  // hyper: 超链接
-    pub noindent: bool,   // noindent: 不缩进
-    pub force_color: bool, // force_color: 强制使用颜色
-    pub nocolor: bool,    // nocolor: 禁用颜色
-    pub xdev: bool,       // xdev: 不跨文件系统
-    pub noreport: bool,   // noreport: 不显示统计信息
-    pub nolinks: bool,    // nolinks: 不显示链接数
-    pub ignorecase: bool, // ignorecase: 忽略大小写
-    pub matchdirs: bool,  // matchdirs: 匹配目录
-    pub fromfile: bool,   // fromfile: 从文件读取参数
-    pub metafirst: bool,  // metafirst: 元数据在前
-    pub gitignore: bool,  // gitignore: 使用 .gitignore
-    pub showinfo: bool,   // showinfo: 显示注释信息
-    pub reverse: bool,    // reverse: 反向排序
-    pub fflinks: bool,    // fflinks: 跟踪符号链接
-    pub htmloffset: bool, // htmloffset: HTML 偏移量
-    pub acl: bool,        // acl: 显示 ACL
-    pub selinux: bool,    // selinux: 显示 SELinux 上下文
-    pub condense_singletons: bool, // condense_singletons: 合并单例
-    pub colorize: bool,   // colorize: 颜色化
-    pub ansilines: bool,  // ansilines: ANSI 行
-    pub linktargetcolor: bool, // linktargetcolor: 链接目标颜色
-    pub remove_space: bool, // remove_space: 移除空格
-    pub flimit: i32,      // flimit: 文件限制
-    pub compress_indent: i32, // compress_indent: 压缩缩进
+    // TODO: 将这些单字母标志改为更有意义的名称（保留原 C 注释）
+    pub a: bool, // 显示所有文件（含隐藏文件）
+    pub c: bool, // 使用 ctime（状态改变时间）排序/显示
+    pub d: bool, // 仅列出目录
+    pub f: bool, // 打印每个文件的完整路径前缀
+    pub g: bool, // 显示文件所属组名或 GID
+    pub h: bool, // 以人类可读方式打印文件大小
+    pub l: bool, // 将符号链接当作目录跟随
+    pub p: bool, // 打印每个文件的保护位
+    pub q: bool, // 将不可打印字符打印为 '?'
+    pub s: bool, // 打印每个文件的大小（字节）
+    pub u: bool, // 显示文件属主名或 UID
+    pub D: bool, // 打印最后修改时间（或 -c 时的状态改变时间）
+    pub F: bool, // 为条目追加指示符（'/'、'*'、'=' 等）
+    pub H: bool, // HTML 输出模式
+    pub J: bool, // JSON 输出模式
+    pub N: bool, // 原样打印不可打印字符
+    pub Q: bool, // 用双引号包裹文件名
+    pub R: bool, // 达到最大目录深度时重新运行 tree
+    pub X: bool, // XML 输出模式
+    pub inode: bool, // 打印每个文件的 inode 号
+    pub dev: bool, // 打印每个文件所属的设备 ID
+    pub si: bool, // 类似 -h，但使用 SI 单位（1000 进制）
+    pub du: bool, // 通过内容计算目录大小
+    pub prune: bool, // 从输出中剪掉空目录
+    pub hyper: bool, // 开启 OSC 8 终端超链接
+    pub noindent: bool, // 不打印缩进行（-i）
+    pub force_color: bool, // 始终开启颜色（-C）
+    pub nocolor: bool, // 始终关闭颜色（-n）
+    pub xdev: bool, // 仅停留在当前文件系统（-x）
+    pub noreport: bool, // 关闭树列表末尾的文件/目录计数
+    pub nolinks: bool, // 关闭 HTML 输出中的超链接
+    pub ignorecase: bool, // 模式匹配时忽略大小写
+    pub matchdirs: bool, // 在 -P 模式匹配中包含目录名
+    pub fromfile: bool, // 从文件读取路径（--fromfile/--fromtabfile）
+    pub metafirst: bool, // 将元数据打印在每行开头
+    pub gitignore: bool, // 使用 .gitignore 文件过滤
+    pub showinfo: bool, // 打印 .info 文件中的信息
+    pub reverse: bool, // 反转排序顺序（-r）
+    pub fflinks: bool, // 使用 --fromfile 时处理链接信息
+    pub htmloffset: bool, // HTML 输出时对 baseHREF 做偏移
+    pub acl: bool, // 若存在 ACL 则在权限后打印 '+'
+    pub selinux: bool, // 打印 SELinux 安全标签
+    pub condense_singletons: bool, // 将单例目录压缩为一行输出
+    pub colorize: bool, // 是否使用颜色（由 parse_dir_colors 决定）
+    pub ansilines: bool, // 使用 ANSI 图形缩进线（-A）
+    pub linktargetcolor: bool, // 对链接目标着色（LS_COLORS 的 ln=target）
+    pub remove_space: bool, // 移除缩进线后的空格
+    pub flimit: i32, // 文件数量上限（--filelimit）
+    pub compress_indent: i32, // 缩进压缩级别（--compress）
 }
 
-/// _info 结构体对应 C 中的 struct _info
-#[repr(C)]
-#[derive(Debug, Default)]
-pub struct Info {
-    pub name: String,           // 文件名
-    pub lnk: String,            // 符号链接目标
-    pub isdir: bool,            // 是否是目录
-    pub issok: bool,            // 是否是套接字
-    pub isfifo: bool,           // 是否是 FIFO
-    pub isexe: bool,            // 是否是可执行文件
-    pub isfile: bool,           // 是否是普通文件
-    pub orphan: bool,           // 是否是孤儿文件
-    #[cfg(target_os = "linux")]
-    pub hasacl: bool,           // 是否有 ACL
-    #[cfg(target_os = "linux")]
-    pub secontext: Option<String>, // SELinux 上下文
-    pub mode: u32,              // 文件模式（权限）
-    pub lnkmode: u32,           // 符号链接模式
-    pub uid: u32,               // 用户 ID
-    pub gid: u32,               // 组 ID
-    pub size: i64,              // 文件大小
-    pub atime: i64,             // 访问时间
-    pub ctime: i64,             // 状态改变时间
-    pub mtime: i64,             // 修改时间
-    pub dev: u64,               // 设备号
-    pub ldev: u64,              // 符号链接设备号
-    pub inode: u64,             // inode 编号
-    pub linode: u64,            // 符号链接 inode 编号
-    #[cfg(__EMX__)]
-    pub attr: i32,              // OS/2 属性
-    pub err: Option<String>,    // 错误信息
-    pub tag: Option<String>,    // 标签
-    pub condensed: usize,       // 压缩计数
-    pub comment: Vec<String>,   // 注释列表
-    pub child: Option<Vec<Info>>, // 子节点（目录）
-    pub next: Option<Box<Info>>,  // 下一个节点（链表）
-    pub tchild: Option<Box<Info>>, // 树形子节点
-}
-
-impl Info {
-    /// 从 Metadata 创建 Info
-    pub fn from_metadata(
-        name: String,
-        metadata: &std::fs::Metadata,
-        isdir: bool,
-        lnk: Option<String>,
-    ) -> Self {
-        let size = metadata.len() as i64;
-        let mtime = metadata.modified()
-            .map(|t| t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
-            .unwrap_or(0);
-        let atime = metadata.accessed()
-            .map(|t| t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
-            .unwrap_or(0);
-        let ctime = metadata.created()
-            .map(|t| t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
-            .unwrap_or(0);
-
-        let (uid, gid) = if cfg!(target_os = "linux") {
-            #[cfg(target_os = "linux")]
-            {
-                (metadata.permissions().uid() as u32, metadata.permissions().gid() as u32)
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
-                (0, 0)
-            }
-        } else {
-            (0, 0)
-        };
-
-        let (dev, inode) = if cfg!(target_os = "linux") {
-            #[cfg(target_os = "linux")]
-            {
-                (metadata.dev() as u64, metadata.ino() as u64)
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
-                (0, 0)
-            }
-        } else {
-            (0, 0)
-        };
-
-        // 从文件模式中提取权限
-        let mode = metadata.permissions().as_u32() as u32;
-
-        Self {
-            name,
-            lnk: lnk.unwrap_or_default(),
-            isdir,
-            issok: false,
-            isfifo: false,
-            isexe: false,
-            isfile: false,
-            orphan: false,
-            #[cfg(target_os = "linux")]
-            hasacl: false,
-            #[cfg(target_os = "linux")]
-            secontext: None,
-            mode,
-            lnkmode: 0,
-            uid,
-            gid,
-            size,
-            atime,
-            ctime,
-            mtime,
-            dev,
-            ldev: 0,
-            inode,
-            linode: 0,
-            #[cfg(__EMX__)]
-            attr: 0,
-            err: None,
-            tag: None,
-            condensed: 0,
-            comment: Vec::new(),
-            child: None,
-            next: None,
-            tchild: None,
+impl Flags {
+    // 对应 C 中 memset(&flag, 0, sizeof(flag)) 的初始状态
+    pub const fn new() -> Flags {
+        Flags {
+            a: false, c: false, d: false, f: false, g: false, h: false, l: false,
+            p: false, q: false, s: false, u: false,
+            D: false, F: false, H: false, J: false, N: false, Q: false, R: false, X: false,
+            inode: false, dev: false, si: false, du: false, prune: false, hyper: false,
+            noindent: false, force_color: false, nocolor: false, xdev: false, noreport: false,
+            nolinks: false, ignorecase: false, matchdirs: false, fromfile: false,
+            metafirst: false, gitignore: false, showinfo: false, reverse: false, fflinks: false,
+            htmloffset: false, acl: false, selinux: false, condense_singletons: false,
+            colorize: false, ansilines: false, linktargetcolor: false, remove_space: false,
+            flimit: 0, compress_indent: 0,
         }
     }
 }
 
-/// extensions 结构体对应 C 中的 struct extensions（用于颜色扩展名）
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct Extensions {
-    pub ext: String,           // 扩展名
-    pub term_flg: String,      // 终端标志
-    pub nxt: Option<Box<Extensions>>, // 下一个节点
+impl Default for Flags {
+    fn default() -> Self {
+        Flags::new()
+    }
 }
 
-/// linedraw 结构体对应 C 中的 struct linedraw（用于绘制线条）
+/* =====================================================================
+ * struct _info —— 对应 tree.h 中的 struct _info
+ * ===================================================================== */
+#[derive(Debug, Default)]
+pub struct Info {
+    pub name: String, // C: char *name
+    pub lnk: Option<String>, // C: char *lnk（符号链接目标，NULL 表示非链接）
+    pub isdir: bool,
+    pub issok: bool, // 是否为套接字
+    pub isfifo: bool, // 是否为 FIFO
+    pub isexe: bool, // 是否可执行
+    pub orphan: bool, // 是否为孤儿链接（目标不存在）
+    #[cfg(target_os = "linux")]
+    pub hasacl: bool, // 是否有 POSIX ACL
+    #[cfg(target_os = "linux")]
+    pub secontext: Option<String>, // SELinux 上下文（strhash 缓存的字符串）
+    pub mode: u32, // C: mode_t mode（lstat 的结果）
+    pub lnkmode: u32, // C: mode_t lnkmode（stat 跟随链接的结果）
+    pub uid: u32,
+    pub gid: u32,
+    pub size: i64, // C: off_t size
+    pub atime: i64, // C: time_t atime
+    pub ctime: i64,
+    pub mtime: i64,
+    pub dev: u64, // C: dev_t dev（stat 跟随链接）
+    pub ldev: u64, // C: dev_t ldev（lstat）
+    pub inode: u64, // C: ino_t inode（stat 跟随链接）
+    pub linode: u64, // C: ino_t linode（lstat）
+    pub err: Option<String>, // C: char *err（目录打开错误等信息）
+    pub tag: Option<&'static str>, // C: const char *tag（XML 输出使用的类型标签，指向字符串常量）
+    pub condensed: usize, // C: size_t condensed（--condense 压缩的层数）
+    pub comment: Vec<String>, // C: char **comment（.info 注释行，NULL 结尾）
+    pub child: Option<Vec<Info>>, // C: struct _info **child（子目录项数组）
+    pub next: Option<Box<Info>>, // C: struct _info *next（链表后继）
+    pub tchild: Option<Box<Info>>, // C: struct _info *tchild（文件树子节点，file.c 使用）
+}
+
+/* =====================================================================
+ * struct extensions —— 对应 color.c 的 struct extensions（颜色扩展名表）
+ * ===================================================================== */
+#[derive(Debug, Default)]
+pub struct Extensions {
+    pub ext: String, // 扩展名（如 "bat"）
+    pub term_flg: String, // 终端颜色代码
+    pub nxt: Option<Box<Extensions>>, // 链表后继
+}
+
+/* =====================================================================
+ * struct linedraw —— 对应 color.c 的 struct linedraw（线条绘制字符表）
+ * 注意：原 C 表项含非 UTF-8 字节（ANSI 转义序列、Shift-JIS/EUC 双字节字符），
+ *       因此字符字段一律使用字节切片 &'static [u8] 而非 &str。
+ * ===================================================================== */
 #[derive(Debug, Clone, Copy)]
 pub struct Linedraw {
-    pub name: &'static [&'static str],  // 名称数组
-    pub copy: &'static str,            // 复制字符
-    pub vert: [&'static str; 3],        // 垂直线（3 种）
-    pub vert_left: [&'static str; 3],   // 左垂直线
-    pub corner: [&'static str; 3],      // 角落线
-    pub ctop: &'static str,             // 顶部颜色
-    pub cbot: &'static str,             // 底部颜色
-    pub cmid: &'static str,             // 中部颜色
-    pub cext: &'static str,             // 扩展名颜色
-    pub csingle: &'static str,          // 单个文件颜色
+    pub name: &'static [&'static str], // 该表适用的字符集名称列表（NULL 结尾 → 空切片为哨兵）
+    pub copy: &'static [u8], // 版权符号
+    pub vert: [&'static [u8]; 3], // 垂直连接线（3 种压缩级别）
+    pub vert_left: [&'static [u8]; 3], // 左侧垂直连接线
+    pub corner: [&'static [u8]; 3], // 角落连接线
+    pub ctop: &'static [u8], // 注释顶部标记
+    pub cbot: &'static [u8], // 注释底部标记
+    pub cmid: &'static [u8], // 注释中部标记
+    pub cext: &'static [u8], // 注释扩展标记
+    pub csingle: &'static [u8], // 单行注释标记
 }
 
-/// meta_ids 结构体对应 C 中的 struct meta_ids（用于元数据 ID）
-#[repr(C)]
-#[derive(Debug, Clone)]
+/* =====================================================================
+ * struct meta_ids —— 对应 color.c 的 struct meta_ids（元数据 ID 表）
+ * 原 C 源码中该结构体未实际使用，仅为头文件定义。
+ * ===================================================================== */
+#[derive(Debug, Default)]
 pub struct MetaIds {
-    pub name: String,       // 名称
-    pub term_flg: String,   // 终端标志
+    pub name: String,
+    pub term_flg: String,
 }
 
-/// pattern 结构体对应 C 中的 struct pattern（用于过滤模式）
-#[repr(C)]
-#[derive(Debug, Clone)]
+/* =====================================================================
+ * struct pattern —— 对应 filter.c 的 struct pattern（过滤模式）
+ * ===================================================================== */
+#[derive(Debug, Default)]
 pub struct Pattern {
-    pub pattern: String,    // 模式
-    pub relative: i32,      // 相对标志
-    pub next: Option<Box<Pattern>>, // 下一个节点
+    pub pattern: String, // 模式字符串
+    pub relative: i32, // 是否为相对模式（不含 '/'）
+    pub next: Option<Box<Pattern>>, // 链表后继
 }
 
-/// ignorefile 结构体对应 C 中的 struct ignorefile（用于忽略文件）
-#[repr(C)]
-#[derive(Debug, Clone)]
+/* =====================================================================
+ * struct ignorefile —— 对应 filter.c 的 struct ignorefile（gitignore 文件）
+ * ===================================================================== */
+#[derive(Debug, Default)]
 pub struct Ignorefile {
-    pub path: String,              // 路径
-    pub remove: Option<Box<Pattern>>, // 移除模式
-    pub reverse: Option<Box<Pattern>>, // 反向模式
-    pub next: Option<Box<Ignorefile>>, // 下一个节点
+    pub path: String, // 基准路径
+    pub remove: Option<Box<Pattern>>, // 移除模式链表
+    pub reverse: Option<Box<Pattern>>, // 反向（!）模式链表
+    pub next: Option<Box<Ignorefile>>, // 链表后继
 }
 
-/// comment 结构体对应 C 中的 struct comment（用于注释）
-#[repr(C)]
-#[derive(Debug, Clone)]
+/* =====================================================================
+ * struct comment —— 对应 info.c 的 struct comment（.info 注释块）
+ * ===================================================================== */
+#[derive(Debug, Default)]
 pub struct Comment {
-    pub pattern: Option<Box<Pattern>>, // 模式
-    pub desc: Vec<String>,           // 描述
-    pub next: Option<Box<Comment>>,   // 下一个节点
+    pub pattern: Option<Box<Pattern>>, // 关联的模式链表
+    pub desc: Vec<String>, // 注释描述行（C: char **desc）
+    pub next: Option<Box<Comment>>, // 链表后继
 }
 
-/// infofile 结构体对应 C 中的 struct infofile（用于信息文件）
-#[repr(C)]
-#[derive(Debug, Clone)]
+/* =====================================================================
+ * struct infofile —— 对应 info.c 的 struct infofile（.info 文件）
+ * ===================================================================== */
+#[derive(Debug, Default)]
 pub struct Infofile {
-    pub path: String,              // 路径
-    pub comments: Option<Box<Comment>>, // 注释
-    pub next: Option<Box<Infofile>>, // 下一个节点
+    pub path: String,
+    pub comments: Option<Box<Comment>>, // 注释块链表
+    pub next: Option<Box<Infofile>>, // 链表后继
 }
 
-/// totals 结构体对应 C 中的 struct totals（用于统计）
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
+/* =====================================================================
+ * struct totals —— 对应 list.c 的 struct totals（统计信息）
+ * ===================================================================== */
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Totals {
-    pub files: usize,   // 文件数
-    pub dirs: usize,    // 目录数
-    pub size: i64,      // 总大小
+    pub files: usize, // C: size_t files
+    pub dirs: usize, // C: size_t dirs
+    pub size: i64, // C: off_t size
 }
 
-/// listingcalls 结构体对应 C 中的 struct listingcalls（用于列表调用回调）
-#[repr(C)]
+/* =====================================================================
+ * struct listingcalls —— 对应 list.c 的 struct listingcalls（输出回调集合）
+ * 不同输出格式（终端/HTML/XML/JSON）通过替换这组函数指针切换。
+ * ===================================================================== */
 #[derive(Debug, Clone, Copy)]
 pub struct ListingCalls {
-    pub intro: fn(),                                    // 开场
-    pub outtro: fn(),                                   // 结束
-    pub printinfo: fn(String, &Info, i32) -> i32,       // 打印信息
-    pub printfile: fn(String, String, &Info, bool) -> i32, // 打印文件
-    pub error: fn(String) -> i32,                       // 错误处理
-    pub newline: fn(&Info, i32, bool, bool),            // 换行
-    pub close: fn(&Info, i32, bool),                    // 关闭
-    pub report: fn(Totals),                             // 报告统计
+    pub intro: fn(), // 输出开始
+    pub outtro: fn(), // 输出结束
+    pub printinfo: fn(dirname: &str, file: Option<&Info>, level: i32) -> i32, // 打印条目元数据
+    pub printfile: fn(dirname: &str, filename: &str, file: Option<&Info>, descend: i32) -> i32, // 打印条目名
+    pub error: fn(error: &str) -> i32, // 打印错误
+    pub newline: fn(file: Option<&Info>, level: i32, postdir: i32, needcomma: bool), // 换行
+    pub close: fn(file: Option<&Info>, level: i32, needcomma: bool), // 关闭条目
+    pub report: fn(tot: Totals), // 打印统计报告
 }
 
-// 函数原型声明（简化版本）
-
-pub fn color(_mode: u32, _name: &str, _orphan: bool, _islink: bool) -> Option<String> {
-    None
+/* =====================================================================
+ * 平台 stat 抽象（对应 C 的 struct stat / lstat() / stat() 系统调用）
+ * Rust 标准库的 std::os::unix::fs::MetadataExt 提供全部所需字段；
+ * 非 Unix 平台（如 Windows）降级为有限字段，保证可编译。
+ * ===================================================================== */
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StatFields {
+    pub mode: u32, // st_mode
+    pub uid: u32, // st_uid
+    pub gid: u32, // st_gid
+    pub size: i64, // st_size（off_t）
+    pub atime: i64, // st_atime
+    pub ctime: i64, // st_ctime
+    pub mtime: i64, // st_mtime
+    pub dev: u64, // st_dev
+    pub inode: u64, // st_ino
 }
 
-pub fn endcolor() {}
-pub fn fancy(_out: &mut impl std::io::Write, _s: &str) {}
-pub fn getcharset() -> &'static str {
-    "UTF-8"
-}
-pub fn initlinedraw(_help: bool) {}
-
-pub fn file_getfulltree(
-    _d: &str,
-    _lev: u64,
-    _dev: u64,
-    _size: &mut i64,
-    _err: &mut Option<String>,
-) -> Option<Vec<Info>> {
-    None
-}
-
-pub fn tabedfile_getfulltree(
-    _d: &str,
-    _lev: u64,
-    _dev: u64,
-    _size: &mut i64,
-    _err: &mut Option<String>,
-) -> Option<Vec<Info>> {
-    None
-}
-
-pub fn gittrim(_s: &mut String) {}
-pub fn new_pattern(_pattern: &str) -> Option<Pattern> {
-    Some(Pattern {
-        pattern: _pattern.to_string(),
-        relative: 0,
-        next: None,
+// C: lstat(path, &st) —— 不跟随符号链接
+#[cfg(unix)]
+pub fn lstat_fields(path: &str) -> io::Result<StatFields> {
+    use std::os::unix::fs::MetadataExt;
+    let md = std::fs::symlink_metadata(path)?;
+    Ok(StatFields {
+        mode: md.mode(),
+        uid: md.uid(),
+        gid: md.gid(),
+        size: md.size() as i64,
+        atime: md.atime(),
+        ctime: md.ctime(),
+        mtime: md.mtime(),
+        dev: md.dev(),
+        inode: md.ino(),
     })
 }
-pub fn gitignore_search(_startpath: &str, _depth: i32) -> Option<Ignorefile> {
-    None
-}
-pub fn filtercheck(_path: &str, _name: &str, _isdir: bool) -> bool {
-    true
-}
-pub fn new_ignorefile(_basepath: &str, _path: &str, _checkparents: bool) -> Option<Ignorefile> {
-    None
-}
-pub fn push_filterstack(_ig: Ignorefile) {}
-pub fn pop_filterstack() -> Option<Ignorefile> {
-    None
-}
-pub fn flush_filterstack() -> Option<Ignorefile> {
-    None
+
+// C: stat(path, &st) —— 跟随符号链接
+#[cfg(unix)]
+pub fn stat_fields(path: &str) -> io::Result<StatFields> {
+    use std::os::unix::fs::MetadataExt;
+    let md = std::fs::metadata(path)?;
+    Ok(StatFields {
+        mode: md.mode(),
+        uid: md.uid(),
+        gid: md.gid(),
+        size: md.size() as i64,
+        atime: md.atime(),
+        ctime: md.ctime(),
+        mtime: md.mtime(),
+        dev: md.dev(),
+        inode: md.ino(),
+    })
 }
 
-pub fn init_hashes() {}
-pub fn uidtoname(_uid: u32) -> Option<String> {
-    None
-}
-pub fn gidtoname(_gid: u32) -> Option<String> {
-    None
-}
-pub fn findino(_inode: u64, _dev: u64) -> bool {
-    false
-}
-pub fn saveino(_inode: u64, _dev: u64) {}
-
-pub fn url_encode(_fd: &mut std::fs::File, _s: &str) -> bool {
-    true
-}
-pub fn json_indent(_maxlevel: i32) {}
-pub fn json_fillinfo(_ent: &Info) {}
-pub fn json_intro() {}
-pub fn json_outtro() {}
-pub fn json_printinfo(_dirname: String, _file: &Info, _level: i32) -> i32 {
-    0
-}
-pub fn json_printfile(_dirname: String, _filename: String, _file: &Info, _descend: bool) -> i32 {
-    0
-}
-pub fn json_error(_error: String) -> i32 {
-    0
-}
-pub fn json_newline(_file: &Info, _level: i32, _postdir: bool, _needcomma: bool) {}
-pub fn json_close(_file: &Info, _level: i32, _needcomma: bool) {}
-pub fn json_report(_tot: Totals) {}
-
-pub fn null_intro() {}
-pub fn null_outtro() {}
-pub fn null_close(_file: &Info, _level: i32, _needcomma: bool) {}
-pub fn emit_tree(_dirname: Vec<String>, _needfulltree: bool) {}
-pub fn listdir(
-    _dirname: &str,
-    _dir: &mut Vec<Info>,
-    _lev: i32,
-    _dev: u64,
-    _hasfulltree: bool,
-) -> Totals {
-    Totals {
-        files: 0,
-        dirs: 0,
-        size: 0,
-    }
-}
-
-pub fn setoutput(_filename: &str) {}
-pub fn print_version(_nl: bool) {}
-pub fn usage(_exit_code: i32) {}
-pub fn push_files(_dir: &str, _ig: &mut Option<Ignorefile>, _inf: &mut Option<Infofile>, _top: bool) {}
-pub fn patignore(_name: &str, _isdir: bool, _checkpaths: bool) -> i32 {
-    0
-}
-pub fn patinclude(_name: &str, _isdir: bool, _checkpaths: bool) -> i32 {
-    0
-}
-pub fn unix_getfulltree(
-    _d: &str,
-    _lev: u64,
-    _dev: u64,
-    _size: &mut i64,
-    _err: &mut Option<String>,
-) -> Option<Vec<Info>> {
-    None
-}
-pub fn read_dir(
-    _dir: &str,
-    _n: &mut Option<usize>,
-    _infotop: i32,
-) -> Option<Vec<Info>> {
-    None
-}
-
-pub fn filesfirst(_a: &Option<Vec<Info>>, _b: &Option<Vec<Info>>) -> i32 {
-    0
-}
-pub fn dirsfirst(_a: &Option<Vec<Info>>, _b: &Option<Vec<Info>>) -> i32 {
-    0
-}
-pub fn alnumsort(_a: &Option<Vec<Info>>, _b: &Option<Vec<Info>>) -> i32 {
-    0
-}
-pub fn versort(_a: &Option<Vec<Info>>, _b: &Option<Vec<Info>>) -> i32 {
-    0
-}
-pub fn reversealnumsort(_a: &Option<Vec<Info>>, _b: &Option<Vec<Info>>) -> i32 {
-    0
-}
-pub fn mtimesort(_a: &Option<Vec<Info>>, _b: &Option<Vec<Info>>) -> i32 {
-    0
-}
-pub fn ctimesort(_a: &Option<Vec<Info>>, _b: &Option<Vec<Info>>) -> i32 {
-    0
-}
-pub fn sizecmp(_a: i64, _b: i64) -> i32 {
-    0
-}
-pub fn fsizesort(_a: &Option<Vec<Info>>, _b: &Option<Vec<Info>>) -> i32 {
-    0
-}
-
-pub fn patmatch(_buf: &str, _pat: &str, _isdir: bool) -> bool {
-    true
-}
-pub fn indent(_maxlevel: i32) {}
-pub fn free_dir(_dir: &mut Vec<Info>) {}
-pub fn prot(_mode: u32) -> String {
-    format!("{:o}", _mode)
-}
-pub fn do_date(_time: i64) -> String {
-    // TODO: 实现日期格式化
-    String::new()
-}
-pub fn printit(_s: &str) {
-    println!("{}", _s);
-}
-pub fn psize(_buf: &mut String, _size: i64) -> i32 {
-    _buf.push_str(&format!("{}", _size));
-    0
-}
-pub fn Ftype(_mode: u32) -> char {
-    if _mode & 0o040000 != 0 {
-        'd'
-    } else if _mode & 0o100000 != 0 {
-        'l'
-    } else if _mode & 0o011000 != 0 {
-        'p'
-    } else if _mode & 0o020000 != 0 {
-        's'
+// 非 Unix 平台降级实现：Windows 无 lstat/uid/gid 等概念，
+// 仅能提供 mode 的粗略近似与文件大小/修改时间。
+#[cfg(not(unix))]
+fn metadata_to_fields(md: &std::fs::Metadata) -> StatFields {
+    use std::os::windows::fs::MetadataExt;
+    let size = md.file_size() as i64;
+    let mtime = md
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let readonly = md.permissions().readonly();
+    // 粗略近似：目录 0755、只读文件 0444、普通文件 0644
+    let mode = if md.is_dir() {
+        0o40755
+    } else if readonly {
+        0o100444
     } else {
-        '-'
+        0o100644
+    };
+    StatFields {
+        mode,
+        uid: 0,
+        gid: 0,
+        size,
+        atime: mtime,
+        ctime: mtime,
+        mtime,
+        // Windows 的 volume_serial_number()/file_index() 当前仍为不稳定 API，置 0
+        dev: 0,
+        inode: 0,
     }
 }
-pub fn stat2info(_st: &std::fs::Metadata) -> Option<Info> {
-    None
-}
-pub fn fillinfo(_buf: &mut String, _ent: &Info) -> i32 {
-    0
+
+#[cfg(not(unix))]
+pub fn lstat_fields(path: &str) -> io::Result<StatFields> {
+    // Windows 上 lstat 与 stat 等价（Windows 符号链接由 metadata 处理）
+    let md = std::fs::symlink_metadata(path)?;
+    Ok(metadata_to_fields(&md))
 }
 
-pub fn unix_printinfo(_dirname: String, _file: &Info, _level: i32) -> i32 {
-    0
-}
-pub fn unix_printfile(_dirname: String, _filename: String, _file: &Info, _descend: bool) -> i32 {
-    0
-}
-pub fn unix_error(_error: String) -> i32 {
-    0
-}
-pub fn unix_newline(_file: &Info, _level: i32, _postdir: bool, _needcomma: bool) {}
-pub fn unix_report(_tot: Totals) {}
-
-pub fn pathconcat(_str: &str, _args: Vec<&str>) -> String {
-    format!("{}", _str)
-}
-pub fn is_singleton(_dir: &Info) -> bool {
-    false
-}
-pub unsafe fn xmalloc(_size: usize) -> *mut u8 {
-    std::alloc::alloc(std::alloc::Layout::from_size_align_unchecked(_size, 1))
-}
-pub unsafe fn xrealloc(_ptr: *mut u8, _size: usize) -> *mut u8 {
-    if _ptr.is_null() {
-        return xmalloc(_size);
-    }
-    let layout = std::alloc::Layout::from_size_align_unchecked(_size, 1);
-    std::alloc::realloc(_ptr, layout, _size)
+#[cfg(not(unix))]
+pub fn stat_fields(path: &str) -> io::Result<StatFields> {
+    let md = std::fs::metadata(path)?;
+    Ok(metadata_to_fields(&md))
 }
 
-pub fn xml_intro() {}
-pub fn xml_outtro() {}
-pub fn xml_printinfo(_dirname: String, _file: &Info, _level: i32) -> i32 {
-    0
-}
-pub fn xml_printfile(_dirname: String, _filename: String, _file: &Info, _descend: bool) -> i32 {
-    0
-}
-pub fn xml_error(_error: String) -> i32 {
-    0
-}
-pub fn xml_newline(_file: &Info, _level: i32, _postdir: bool, _needcomma: bool) {}
-pub fn xml_close(_file: &Info, _level: i32, _needcomma: bool) {}
-pub fn xml_report(_tot: Totals) {}
-
-#[cfg(not(target_os = "linux"))]
-pub fn strverscmp(s1: &str, s2: &str) -> i32 {
-    strverscmp::strverscmp(s1, s2)
+// C: readlink(path, buf, size) —— 读取符号链接目标
+pub fn read_link(path: &str) -> io::Result<String> {
+    std::fs::read_link(path).map(|p| p.to_string_lossy().into_owned())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_strverscmp_no_digit() {
-        assert_eq!(strverscmp("no digit", "no digit"), 0);
-    }
-
-    #[test]
-    fn test_strverscmp_item_99_vs_100() {
-        assert!(strverscmp("item#99", "item#100") < 0);
-    }
-
-    #[test]
-    fn test_strverscmp_alpha1_vs_alpha001() {
-        assert!(strverscmp("alpha1", "alpha001") > 0);
-    }
-
-    #[test]
-    fn test_strverscmp_part1_f012_vs_part1_f01() {
-        assert!(strverscmp("part1_f012", "part1_f01") > 0);
-    }
-
-    #[test]
-    fn test_strverscmp_foo_009_vs_foo_0() {
-        assert!(strverscmp("foo.009", "foo.0") < 0);
-    }
-
-    #[test]
-    fn test_strverscmp_equal() {
-        assert_eq!(strverscmp("file1", "file1"), 0);
-    }
-
-    #[test]
-    fn test_strverscmp_less() {
-        assert!(strverscmp("file1", "file2") < 0);
-    }
-
-    #[test]
-    fn test_strverscmp_greater() {
-        assert!(strverscmp("file2", "file1") > 0);
-    }
-}
+/* =====================================================================
+ * tree.h 中的函数原型（实现分布在各对应模块中）：
+ *
+ * /* color.c */
+ * void parse_dir_colors(void);                      -> color::parse_dir_colors
+ * bool color(mode_t mode, const char *name, bool orphan, bool islink);
+ * void endcolor(void);
+ * void fancy(FILE *out, char *s);
+ * const char *getcharset(void);
+ * void initlinedraw(bool help);
+ *
+ * /* file.c */
+ * struct _info **file_getfulltree(char *d, u_long lev, dev_t dev, off_t *size, char **err);
+ * struct _info **tabedfile_getfulltree(...);
+ *
+ * /* filter.c */
+ * void gittrim(char *s);
+ * struct pattern *new_pattern(char *pattern);
+ * struct ignorefile *gitignore_search(const char *startpath, int depth);
+ * bool filtercheck(const char *path, const char *name, int isdir);
+ * struct ignorefile *new_ignorefile(const char *basepath, const char *path, bool checkparents);
+ * void push_filterstack(struct ignorefile *ig);
+ * struct ignorefile *pop_filterstack(void);
+ * struct ignorefile *flush_filterstack(void);
+ *
+ * /* hash.c */
+ * void init_hashes(void);
+ * char *uidtoname(uid_t uid);
+ * char *gidtoname(gid_t gid);
+ * bool findino(ino_t, dev_t);
+ * void saveino(ino_t, dev_t);
+ * #ifdef __linux__
+ * char *strhash(char *str);
+ * #endif
+ *
+ * /* html.c */
+ * bool url_encode(FILE *fd, char *s);
+ * void html_intro(void); ... void html_report(struct totals tot);
+ * void html_encode(FILE *fd, char *s);
+ *
+ * /* info.c */
+ * struct infofile *new_infofile(const char *path, bool checkparents);
+ * void push_infostack(struct infofile *inf);
+ * struct infofile *pop_infostack(void);
+ * struct comment *infocheck(const char *path, const char *name, int top, bool isdir);
+ * void printcomment(size_t line, size_t lines, char *s);
+ *
+ * /* json.c */
+ * void json_indent(int maxlevel); void json_fillinfo(struct _info *ent);
+ * void json_intro(void); ... void json_report(struct totals tot);
+ *
+ * /* list.c */
+ * void null_intro(void); void null_outtro(void); void null_close(...);
+ * void emit_tree(char **dirname, bool needfulltree);
+ * struct totals listdir(char *dirname, struct _info **dir, int lev, dev_t dev, bool hasfulltree);
+ *
+ * /* tree.c */
+ * void setoutput(const char *filename);
+ * void print_version(int nl);
+ * void usage(int);
+ * void push_files(const char *dir, struct ignorefile **ig, struct infofile **inf, bool top);
+ * int patignore(const char *name, bool isdir, bool checkpaths);
+ * int patinclude(const char *name, bool isdir, bool checkpaths);
+ * struct _info **unix_getfulltree(char *d, u_long lev, dev_t dev, off_t *size, char **err);
+ * struct _info **read_dir(char *dir, ssize_t *n, int infotop);
+ * int filesfirst(struct _info **, struct _info **); ... int fsizesort(...);
+ * int patmatch(const char *buf, const char *pat, bool isdir);
+ * void indent(int maxlevel);
+ * void free_dir(struct _info **);
+ * char *prot(mode_t);
+ * char *do_date(time_t);
+ * void printit(const char *);
+ * int psize(char *buf, off_t size);
+ * char Ftype(mode_t mode);
+ * struct _info *stat2info(const struct stat *st);
+ * char *fillinfo(char *buf, const struct _info *ent);
+ *
+ * /* unix.c */
+ * int unix_printinfo(...); ... void unix_report(struct totals tot);
+ *
+ * /* util.c */
+ * char *pathconcat(char *str, ...);
+ * bool is_singleton(struct _info *dir);
+ * void *xmalloc(size_t);
+ * void *xrealloc(void *, size_t);
+ *
+ * /* xml.c */
+ * void xml_intro(void); ... void xml_report(struct totals tot);
+ *
+ * /* strverscmp.c（仅非 Linux 平台在 C 中使用，Rust 版始终需要）*/
+ * int strverscmp(const char *s1, const char *s2);
+ * ===================================================================== */

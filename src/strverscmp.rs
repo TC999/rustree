@@ -68,7 +68,9 @@ pub fn strverscmp(s1: &str, s2: &str) -> i32 {
     let mut c2 = p2[0];
 
     // 初始状态：S_N | (c1=='0') + (isdigit(c1))
-    state |= ((c1 == b'0') as u8) | ((c1 >= b'0' && c1 <= b'9') as u8);
+    let c1_is_zero = (c1 == b'0') as u8;
+    let c1_is_digit = (c1 >= b'0' && c1 <= b'9') as u8;
+    state |= c1_is_zero | c1_is_digit;
 
     let mut i = 1;
     let mut diff: i8 = 0;
@@ -80,8 +82,10 @@ pub fn strverscmp(s1: &str, s2: &str) -> i32 {
         i += 1;
 
         // 更新状态
-        state = next_state[state as usize];
-        state |= ((c1 == b'0') as u8) | ((c1 >= b'0' && c1 <= b'9') as u8);
+        let c1_is_zero = (c1 == b'0') as u8;
+        let c1_is_digit = (c1 >= b'0' && c1 <= b'9') as u8;
+        state = next_state[state as usize][0];
+        state |= c1_is_zero | c1_is_digit;
 
         // 计算差值
         diff = (c1 - c2) as i8;
