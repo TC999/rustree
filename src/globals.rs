@@ -20,45 +20,43 @@ use crate::tree::{
  * 对应 C 的 FILE *outfile 以及 fprintf(outfile,...)/fputs/fputc。
  * ===================================================================== */
 
+// 对应 C 的 scopy()/字符串常量：把 String 泄漏为 'static 字符串
+// （用于填入 static mut 的 Option<&str> 全局，模拟 C 中 malloc 后不释放的字符串）
+pub fn leak_str(s: String) -> &'static str {
+    Box::leak(s.into_boxed_str())
+}
+
 // C: FILE *outfile = NULL;
 // 全局输出流：stdout 或 -o 指定的文件。Box<dyn Write> 使 stdout 与文件可统一处理。
 pub static mut OUTFILE: Option<Box<dyn Write>> = None;
 
 // 对应 C 的 fprintf(outfile, fmt, ...)
-// unsafe：访问全局可变输出流
+// 注意：main.rs 已 allow(static_mut_refs)，对 static mut 的引用创建不再需要 unsafe
 #[macro_export]
 macro_rules! out {
     ($($arg:tt)*) => {{
-        unsafe {
-            let w: &mut dyn std::io::Write = $crate::globals::OUTFILE.as_mut().unwrap();
-            let _ = std::io::Write::write_fmt(w, format_args!($($arg)*));
-        }
+        let w: &mut dyn std::io::Write = $crate::globals::OUTFILE.as_mut().unwrap();
+        let _ = std::io::Write::write_fmt(w, format_args!($($arg)*));
     }};
 }
 
 // 对应 C 的 fwrite(bytes, 1, len, outfile)
 // 用于输出 linedraw 表中含非 UTF-8 字节的序列（ANSI 转义、Shift-JIS 等）
-// unsafe：访问全局可变输出流
 #[macro_export]
 macro_rules! outbytes {
     ($bytes:expr) => {{
-        unsafe {
-            let _ = $crate::globals::OUTFILE.as_mut().unwrap().write_all($bytes);
-        }
+        let _ = $crate::globals::OUTFILE.as_mut().unwrap().write_all($bytes);
     }};
 }
 
 // 对应 C 的 fputc(c, outfile)
-// unsafe：访问全局可变输出流
 #[macro_export]
 macro_rules! outc {
     ($c:expr) => {{
-        unsafe {
-            let _ = $crate::globals::OUTFILE
-                .as_mut()
-                .unwrap()
-                .write_all(&[$c]);
-        }
+        let _ = $crate::globals::OUTFILE
+            .as_mut()
+            .unwrap()
+            .write_all(&[$c]);
     }};
 }
 

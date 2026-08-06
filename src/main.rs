@@ -12,6 +12,7 @@
 #![allow(dead_code)]
 #![allow(static_mut_refs)]
 
+mod color;
 mod filter;
 mod globals;
 mod hash;
