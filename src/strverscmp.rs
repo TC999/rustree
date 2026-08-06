@@ -18,9 +18,9 @@ const S_Z: i32 = 0xC;
 const CMP: i32 = 2;
 const LEN: i32 = 3;
 
-// C 的 isdigit(c)
+// C 的 isdigit(c)（ASCII 数字）
 fn is_digit(c: u8) -> bool {
-    (b'0'..=b'9').contains(&c)
+    c.is_ascii_digit()
 }
 
 // 状态转换表（与 C 源码逐项对应）。
