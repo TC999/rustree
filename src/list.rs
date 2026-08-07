@@ -433,7 +433,7 @@ mod tests {
     }
     impl Write for Capture {
         fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
-            self.buf.lock().unwrap().extend_from_slice(data);
+            self.buf.lock().unwrap_or_else(|e| e.into_inner()).extend_from_slice(data);
             Ok(data.len())
         }
         fn flush(&mut self) -> std::io::Result<()> {
@@ -444,7 +444,7 @@ mod tests {
     // report 回调记录统计结果
     static REPORTED: Mutex<Option<Totals>> = Mutex::new(None);
     fn test_report(t: Totals) {
-        *REPORTED.lock().unwrap() = Some(t);
+        *REPORTED.lock().unwrap_or_else(|e| e.into_inner()) = Some(t);
     }
     // 空操作回调（unix 输出实现在 unix.rs，尚未翻译；此处仅验证遍历逻辑）
     fn test_printinfo(_d: &str, _f: Option<&Info>, _l: i32) -> i32 {
@@ -490,7 +490,7 @@ mod tests {
     #[test]
     fn test_emit_tree_counts() {
         // 共享 FLAG/OUTFILE/DIRS/LC，串行化
-        let _lock = crate::globals::TEST_LOCK.lock().unwrap();
+        let _lock = crate::globals::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _cap = setup();
         // 构造临时目录树：tmp/a.txt、tmp/sub/b.txt
         let tmp = std::env::temp_dir().join(format!(
@@ -509,7 +509,7 @@ mod tests {
         let mut dirs = vec![tmp.to_string_lossy().into_owned()];
         emit_tree(&mut dirs, false);
 
-        let reported = REPORTED.lock().unwrap().take().expect("report 被调用");
+        let reported = REPORTED.lock().unwrap_or_else(|e| e.into_inner()).take().expect("report 被调用");
         // 文件：a.txt + b.txt = 2；目录：sub（listdir 内）+ 顶层 tmp（emit_tree 的 subtotal.dirs++）= 2
         assert_eq!(reported.files, 2);
         assert_eq!(reported.dirs, 2);
@@ -520,7 +520,7 @@ mod tests {
     #[test]
     fn test_emit_tree_empty_dir() {
         // 共享 FLAG/OUTFILE/DIRS/LC，串行化
-        let _lock = crate::globals::TEST_LOCK.lock().unwrap();
+        let _lock = crate::globals::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _cap = setup();
         let tmp = std::env::temp_dir().join(format!(
             "rustree_list_empty_{}_{}",
@@ -535,11 +535,12 @@ mod tests {
         let mut dirs = vec![tmp.to_string_lossy().into_owned()];
         emit_tree(&mut dirs, false);
 
-        let reported = REPORTED.lock().unwrap().take().expect("report 被调用");
+        let reported = REPORTED.lock().unwrap_or_else(|e| e.into_inner()).take().expect("report 被调用");
         assert_eq!(reported.files, 0);
         assert_eq!(reported.dirs, 0);
 
         std::fs::remove_dir_all(&tmp).ok();
     }
 }
+
 

@@ -368,7 +368,7 @@ mod tests {
     #[test]
     fn test_printcomment_no_panic() {
         // 共享全局 OUTFILE/FLAG，串行化
-        let _lock = crate::globals::TEST_LOCK.lock().unwrap();
+        let _lock = crate::globals::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // 输出到 sink（不检查内容，只验证不 panic）
         // unsafe：测试中设置全局输出流为丢弃型 sink
         unsafe {
@@ -386,3 +386,4 @@ mod tests {
         }
     }
 }
+

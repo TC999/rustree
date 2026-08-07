@@ -35,34 +35,54 @@ pub fn leak_str(s: String) -> &'static str {
 // 全局输出流：stdout 或 -o 指定的文件。Box<dyn Write> 使 stdout 与文件可统一处理。
 pub static mut OUTFILE: Option<Box<dyn Write>> = None;
 
-// 对应 C 的 fprintf(outfile, fmt, ...)
-// 注意：main.rs 已 allow(static_mut_refs)，对 static mut 的引用创建不再需要 unsafe
+// 对应 C 的 fprintf(outfile, fmt, ...)/fputs/fputc。
+// 宏仅做参数转发，unsafe 访问集中在辅助函数中（避免宏内展开 metavariable，
+// 同时使 static mut 参数在调用点的求值位置明确）。
+
+// unsafe：访问全局可变输出流（单线程程序，与 C 的全局 outfile 语义一致）
+pub fn out_write(args: std::fmt::Arguments<'_>) {
+    unsafe {
+        let w: &mut dyn Write = OUTFILE.as_mut().unwrap();
+        let _ = w.write_fmt(args);
+    }
+}
+
+// unsafe：访问全局可变输出流
+pub fn out_write_bytes(bytes: &[u8]) {
+    unsafe {
+        let _ = OUTFILE.as_mut().unwrap().write_all(bytes);
+    }
+}
+
+// unsafe：访问全局可变输出流
+pub fn out_write_byte(c: u8) {
+    unsafe {
+        let _ = OUTFILE.as_mut().unwrap().write_all(&[c]);
+    }
+}
+
 #[macro_export]
 macro_rules! out {
-    ($($arg:tt)*) => {{
-        let w: &mut dyn std::io::Write = $crate::globals::OUTFILE.as_mut().unwrap();
-        let _ = std::io::Write::write_fmt(w, format_args!($($arg)*));
-    }};
+    ($($arg:tt)*) => {
+        $crate::globals::out_write(format_args!($($arg)*))
+    };
 }
 
 // 对应 C 的 fwrite(bytes, 1, len, outfile)
 // 用于输出 linedraw 表中含非 UTF-8 字节的序列（ANSI 转义、Shift-JIS 等）
 #[macro_export]
 macro_rules! outbytes {
-    ($bytes:expr) => {{
-        let _ = $crate::globals::OUTFILE.as_mut().unwrap().write_all($bytes);
-    }};
+    ($bytes:expr) => {
+        $crate::globals::out_write_bytes($bytes)
+    };
 }
 
 // 对应 C 的 fputc(c, outfile)
 #[macro_export]
 macro_rules! outc {
-    ($c:expr) => {{
-        let _ = $crate::globals::OUTFILE
-            .as_mut()
-            .unwrap()
-            .write_all(&[$c]);
-    }};
+    ($c:expr) => {
+        $crate::globals::out_write_byte($c)
+    };
 }
 
 /* =====================================================================
@@ -214,6 +234,11 @@ pub static FTYPE: [&str; 8] = [
     "unknown",
 ];
 
+// C: const char fmt[] = "-dlcbsp?";（prot() 中的文件类型字符表）
+// 8 项：ifmt 循环停在哨兵索引 7 时取 '?'（与 ftype 的 "unknown" 对应）
+#[allow(clippy::byte_char_slices)]
+pub static FMT: [u8; 8] = [b'-', b'd', b'l', b'c', b'b', b's', b'p', b'?'];
+
 // C: char *version = "$Version: $ tree v2.3.2 %s 1996 - 2026 ... $";
 pub static VERSION: &str = "$Version: $ tree v2.3.2 %s 1996 - 2026 by Steve Baker, Thomas Moore, Francesc Rocher, Florian Sesser, Kyosuke Tokoro $";
 
@@ -222,3 +247,6 @@ pub static HVERSION: &str = "\t\t tree v2.3.2 %s 1996 - 2026 by Steve Baker and 
 \t\t HTML output hacked and copyleft %s 1998 by Francesc Rocher <br>\n\
 \t\t JSON output hacked and copyleft %s 2014 by Florian Sesser <br>\n\
 \t\t Charsets / OS/2 support %s 2001 by Kyosuke Tokoro\n";
+
+
+

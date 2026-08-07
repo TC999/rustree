@@ -16,6 +16,7 @@ mod color;
 mod filter;
 mod globals;
 mod hash;
+mod html;
 mod info;
 mod list;
 mod strverscmp;
@@ -253,12 +254,12 @@ use crate::filter::{
     filtercheck, gitignore_search, new_ignorefile, push_filterstack,
 };
 use crate::globals::{
-    FLAG, IPATTERN, IPATTERNS, OUTFILE, PATTERN, PATTERNS,
+    DIRS, FLAG, IPATTERN, IPATTERNS, OUTFILE, PATTERN, PATTERNS,
 };
 use crate::info::{infocheck, new_infofile, push_infostack};
 use crate::tree::{
-    stat_fields, Info, StatFields, MINIT, S_IFDIR, S_IFIFO, S_IFLNK, S_IFMT, S_IFSOCK,
-    S_IXGRP, S_IXOTH, S_IXUSR,
+    stat_fields, Info, StatFields, MINIT, SIXMONTHS, S_IFDIR, S_IFIFO, S_IFLNK, S_IFMT, S_IFREG,
+    S_IFSOCK, S_IRUSR, S_ISGID, S_ISUID, S_ISVTX, S_IXGRP, S_IXOTH, S_IXUSR,
 };
 use crate::util::pathconcat;
 
@@ -668,6 +669,412 @@ pub fn setoutput(filename: Option<&str>) {
                 }
             }
         }
+    }
+}
+
+// === 原 C 函数：char *prot(mode_t m) ===
+/// 生成权限字符串：文件类型字符 + rwx 权限位（含 setuid/setgid/sticky 覆盖）。
+pub fn prot(m: u32) -> String {
+    // C: for(i=0; ifmt[i] && (m&S_IFMT) != ifmt[i]; i++); buf[0] = fmt[i];
+    let mut i = 0usize;
+    while crate::globals::IFMT[i] != 0 && (m & S_IFMT) != crate::globals::IFMT[i] {
+        i += 1;
+    }
+    let mut buf: Vec<u8> = vec![crate::globals::FMT[i]];
+    const PERMS: &[u8] = b"rwxrwxrwx";
+    // C: for(b=S_IRUSR, i=0; i<9; b>>=1, i++) buf[i+1] = (m & b) ? perms[i] : '-';
+    let mut b: u32 = S_IRUSR;
+    for &p in PERMS.iter() {
+        buf.push(if m & b != 0 { p } else { b'-' });
+        b >>= 1;
+    }
+    // C: if (m & S_ISUID) buf[3] = (buf[3]=='-')? 'S' : 's';
+    if m & S_ISUID != 0 {
+        buf[3] = if buf[3] == b'-' { b'S' } else { b's' };
+    }
+    // C: if (m & S_ISGID) buf[6] = (buf[6]=='-')? 'S' : 's';
+    if m & S_ISGID != 0 {
+        buf[6] = if buf[6] == b'-' { b'S' } else { b's' };
+    }
+    // C: if (m & S_ISVTX) buf[9] = (buf[9]=='-')? 'T' : 't';
+    if m & S_ISVTX != 0 {
+        buf[9] = if buf[9] == b'-' { b'T' } else { b't' };
+    }
+    String::from_utf8(buf).expect("prot 输出均为 ASCII")
+}
+
+// === 原 C 函数：char *do_date(time_t t) ===
+/// 格式化时间。默认格式按 6 个月窗口选择 "%b %e  %Y"（较远）或 "%b %e %R"（较近）；
+/// 设置 --timefmt 时按自定义格式。
+pub fn do_date(t: i64) -> String {
+    #[cfg(unix)]
+    // unsafe：调用 C 库函数 localtime_r/strftime（libc 无安全封装）
+    unsafe {
+        let mut tm: libc::tm = std::mem::zeroed();
+        let tt: libc::time_t = t as libc::time_t;
+        if libc::localtime_r(&tt, &mut tm).is_null() {
+            return String::new();
+        }
+        // C: if (timefmt) 用 timefmt，否则按时间窗口选默认格式
+        let fmt: &[u8] = if crate::globals::TIMEFMT.is_some() {
+            crate::globals::TIMEFMT.unwrap().as_bytes()
+        } else {
+            // C: time_t c = time(0);
+            let c = libc::time(std::ptr::null_mut());
+            if t > c as i64 || (t + SIXMONTHS) < c as i64 {
+                b"%b %e  %Y"
+            } else {
+                b"%b %e %R"
+            }
+        };
+        let mut buf = vec![0u8; 256];
+        let n = libc::strftime(
+            buf.as_mut_ptr() as *mut libc::c_char,
+            255,
+            fmt.as_ptr() as *const libc::c_char,
+            &tm,
+        );
+        buf.truncate(n);
+        String::from_utf8_lossy(&buf).into_owned()
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows 无 strftime/localtime_r：手写两种默认格式（UTC 近似，注释说明时区差异）。
+        // 自定义 --timefmt 仅支持常见占位符替换。
+        const MONTHS: &[&str] = &[
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        ];
+        // C: time_t c = time(0)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        // 简化：按 UTC 计算（C 的 localtime 依赖本地时区，Windows 上注释说明）
+        let days = t.div_euclid(86400);
+        let secs = t.rem_euclid(86400);
+        let (y, m, d) = civil_from_days(days);
+        let hh = secs / 3600;
+        let mm = (secs % 3600) / 60;
+        // unsafe：读取全局 TIMEFMT
+        if let Some(fmt) = unsafe { crate::globals::TIMEFMT } {
+            // 简单 strftime 子集替换：%Y %y %m %d %e %H %M %S %b %B %%
+            let mut out = String::new();
+            let mut chars = fmt.chars().peekable();
+            while let Some(c) = chars.next() {
+                if c != '%' {
+                    out.push(c);
+                    continue;
+                }
+                match chars.next() {
+                    Some('Y') => out.push_str(&format!("{}", y)),
+                    Some('y') => out.push_str(&format!("{:02}", y % 100)),
+                    Some('m') => out.push_str(&format!("{:02}", m)),
+                    Some('d') => out.push_str(&format!("{:02}", d)),
+                    Some('e') => out.push_str(&format!("{:2}", d)),
+                    Some('H') => out.push_str(&format!("{:02}", hh)),
+                    Some('M') => out.push_str(&format!("{:02}", mm)),
+                    Some('S') => out.push_str(&format!("{:02}", secs % 60)),
+                    Some('b') => out.push_str(MONTHS[(m - 1) as usize]),
+                    Some('%') => out.push('%'),
+                    Some(other) => {
+                        out.push('%');
+                        out.push(other);
+                    }
+                    None => out.push('%'),
+                }
+            }
+            return out;
+        }
+        if t > now || (t + SIXMONTHS) < now {
+            format!("{} {:2}  {}", MONTHS[(m - 1) as usize], d, y)
+        } else {
+            format!("{} {:2} {:02}:{:02}", MONTHS[(m - 1) as usize], d, hh, mm)
+        }
+    }
+}
+
+// 天数 → (年, 月, 日)（Howard Hinnant 的 civil_from_days 算法）
+#[cfg(not(unix))]
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z.rem_euclid(146097);
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
+
+// === 原 C 函数：void printit(const char *s) ===
+/// 输出文件名，处理不可打印字符（-q 时 '?'，否则八进制转义）。
+pub fn printit(s: &str) {
+    // unsafe：读取全局 FLAG/MB_CUR_MAX 并输出到全局输出流
+    unsafe {
+        // C: if (flag.N) { 原样输出（-Q 时加引号）}
+        if FLAG.N {
+            if FLAG.Q {
+                out!("\"{}\"", s);
+            } else {
+                out!("{}", s);
+            }
+            return;
+        }
+        if crate::globals::MB_CUR_MAX > 1 {
+            // 等价于 C 的 mbstowcs 成功路径：Rust 的 String 恒为合法 UTF-8，
+            // 按字符处理（C 中 mbstowcs 失败路径在 Rust 中不可能出现）。
+            if FLAG.Q {
+                outc!(b'"');
+            }
+            for ch in s.chars() {
+                // C: if (iswprint(*tp)) fprintf("%lc")；else '?' 或 "\%03o"
+                if !ch.is_control() {
+                    out!("{}", ch);
+                } else if FLAG.q {
+                    outc!(b'?');
+                } else {
+                    out!("\\{:03o}", ch as u32);
+                }
+            }
+            if FLAG.Q {
+                outc!(b'"');
+            }
+            return;
+        }
+        // C: 字节路径（mb_cur_max <= 1）
+        if FLAG.Q {
+            outc!(b'"');
+        }
+        for &c in s.as_bytes() {
+            // C: if ((c >= 7 && c <= 13) || c == '\\' || (c == '"' && flag.Q) || (c == ' ' && !flag.Q))
+            if (7..=13).contains(&c) || c == b'\\' || (c == b'"' && FLAG.Q) || (c == b' ' && !FLAG.Q)
+            {
+                outc!(b'\\');
+                if c > 13 {
+                    outc!(c);
+                } else {
+                    // C: putc("abtnvfr"[c-7])（\a \b \t \n \v \f \r）
+                    outc!(b"abtnvfr"[c as usize - 7]);
+                }
+            } else if c.is_ascii_graphic() || c == b' ' {
+                // C: else if (isprint(c))
+                outc!(c);
+            } else {
+                // C: else { if (flag.q) { if (mb_cur_max > 1 && c > 127) putc(c); else putc('?'); } else fprintf("\\%03o", c); }
+                if FLAG.q {
+                    if crate::globals::MB_CUR_MAX > 1 && c > 127 {
+                        outc!(c);
+                    } else {
+                        outc!(b'?');
+                    }
+                } else {
+                    out!("\\{:03o}", c);
+                }
+            }
+        }
+        if FLAG.Q {
+            outc!(b'"');
+        }
+    }
+}
+
+// === 原 C 函数：int psize(char *buf, off_t size) ===
+/// 将文件大小格式化到 buf（追加到末尾），返回写入的字符数。
+/// -h/-si 时按单位换算，否则固定 11 位宽。
+pub fn psize(buf: &mut String, size: i64) -> i32 {
+    // unsafe：读取全局 FLAG
+    unsafe {
+        // C: static char *iec_unit="BKMGTPEZY", *si_unit = "dkMGTPEZY";
+        let iec_unit = b"BKMGTPEZY";
+        let si_unit = b"dkMGTPEZY";
+        let unit = if FLAG.si { si_unit } else { iec_unit };
+        // C: int usize = flag.si ? 1000 : 1024;
+        let usize_: i64 = if FLAG.si { 1000 } else { 1024 };
+        let mut size = size;
+        if FLAG.h || FLAG.si {
+            // C: for (idx=size<usize?0:1; size >= (usize*usize); idx++, size/=usize);
+            let mut idx = if size < usize_ { 0 } else { 1 };
+            while size >= usize_ * usize_ {
+                idx += 1;
+                size /= usize_;
+            }
+            let s = if idx == 0 {
+                // C: sprintf(buf, " %4d", (int)size);
+                format!(" {:4}", size)
+            } else {
+                // C: sprintf(buf, (((size+52)/usize) >= 10)? " %3.0f%c" : " %3.1f%c", (float)size/usize, unit[idx]);
+                let val = size as f64 / usize_ as f64;
+                if (size + 52) / usize_ >= 10 {
+                    format!(" {:3.0}{}", val, unit[idx as usize] as char)
+                } else {
+                    format!(" {:3.1}{}", val, unit[idx as usize] as char)
+                }
+            };
+            let n = s.len();
+            buf.push_str(&s);
+            n as i32
+        } else {
+            // C: sizeof(off_t) == sizeof(long long) ? " %11lld" : " %9lld"
+            let s = format!(" {:11}", size);
+            let n = s.len();
+            buf.push_str(&s);
+            n as i32
+        }
+    }
+}
+
+// === 原 C 函数：char Ftype(mode_t mode) ===
+/// 返回 -F 指示符：目录 '/'、套接字 '='、FIFO '|'、链接 '@'、可执行文件 '*'。
+/// 返回 0 表示无指示符。
+// 函数名与 C 源码一致（首字母大写），关闭 snake_case 检查
+#[allow(non_snake_case)]
+pub fn Ftype(mode: u32) -> u8 {
+    // unsafe：读取全局 FLAG
+    unsafe {
+        let m = mode & S_IFMT;
+        if !FLAG.d && m == S_IFDIR {
+            return b'/';
+        } else if m == S_IFSOCK {
+            return b'=';
+        } else if m == S_IFIFO {
+            return b'|';
+        } else if m == S_IFLNK {
+            return b'@'; /* 在此出现，但实际上从未被使用 */
+        } else if m == S_IFREG && (mode & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0 {
+            return b'*';
+        }
+    }
+    0
+}
+
+// === 原 C 函数：void indent(int maxlevel) ===
+/// 输出缩进线（依据 dirs[] 数组决定连接线形状）。
+pub fn indent(maxlevel: i32) {
+    let spaces: [&[u8]; 3] = [b"   ", b"  ", b" "];
+    let htmlspaces: [&[u8]; 3] = [b"&nbsp;&nbsp;&nbsp;", b"&nbsp;&nbsp;", b"&nbsp;"];
+    // unsafe：读取全局 FLAG/DIRS/LINEDRAW 并输出
+    unsafe {
+        // C: char *space = (flag.H? "&nbsp;" : " ");
+        let space: &[u8] = if FLAG.H { b"&nbsp;" } else { b" " };
+        // C: int clvl = flag.compress_indent;（main 中已约束为 0..=2）
+        let clvl = FLAG.compress_indent as usize;
+        // C: if (flag.H) fprintf(outfile, "\t");
+        if FLAG.H {
+            outbytes!(b"\t");
+        }
+        // C: for(i=1; (i <= maxlevel) && dirs[i]; i++)
+        let mut i = 1;
+        while i <= maxlevel && DIRS[i as usize] != 0 {
+            // C: dirs[i+1] ? (dirs[i]==1 ? vert[clvl] : (H ? htmlspaces : spaces))
+            //        : (dirs[i]==1 ? vert_left[clvl] : corner[clvl])
+            let piece: &[u8] = if DIRS[(i + 1) as usize] != 0 {
+                if DIRS[i as usize] == 1 {
+                    crate::color::LINEDRAW.vert[clvl]
+                } else if FLAG.H {
+                    htmlspaces[clvl]
+                } else {
+                    spaces[clvl]
+                }
+            } else if DIRS[i as usize] == 1 {
+                crate::color::LINEDRAW.vert_left[clvl]
+            } else {
+                crate::color::LINEDRAW.corner[clvl]
+            };
+            outbytes!(piece);
+            // C: if (flag.remove_space != true) fprintf(outfile, "%s", space);
+            if !FLAG.remove_space {
+                outbytes!(space);
+            }
+            i += 1;
+        }
+    }
+}
+
+// %-8.32s 格式辅助：截断到 max 字符、左对齐补齐到 min 字符
+fn trunc_pad(s: &str, min: usize, max: usize) -> String {
+    let mut out: String = s.chars().take(max).collect();
+    while out.chars().count() < min {
+        out.push(' ');
+    }
+    out
+}
+
+// === 原 C 函数：char *fillinfo(char *buf, const struct _info *ent) ===
+/// 将文件的元数据（inode/权限/属主/大小/日期等）填充到 buf（追加）。
+pub fn fillinfo(buf: &mut String, ent: Option<&Info>) {
+    buf.clear();
+    // C: if (!ent) return buf;
+    let ent = match ent {
+        Some(e) => e,
+        None => return,
+    };
+    // unsafe：读取全局 FLAG
+    unsafe {
+        // C: if (flag.inode) sprintf(buf, " %7lld", ent->linode);
+        if FLAG.inode {
+            buf.push_str(&format!(" {:7}", ent.linode));
+        }
+        // C: if (flag.dev) sprintf(buf+n, " %3d", (int)ent->ldev);
+        if FLAG.dev {
+            buf.push_str(&format!(" {:3}", ent.ldev));
+        }
+        // C: if (flag.p) sprintf(buf+n, " %s", prot(ent->mode));
+        if FLAG.p {
+            buf.push_str(&format!(" {}", prot(ent.mode)));
+        }
+        #[cfg(target_os = "linux")]
+        // C: if (flag.acl) sprintf(buf+n, "%c", ent->hasacl? '+' : ' ');
+        if FLAG.acl {
+            buf.push(if ent.hasacl { '+' } else { ' ' });
+        }
+        // C: if (flag.u) sprintf(buf+n, " %-8.32s", uidtoname(ent->uid));
+        if FLAG.u {
+            buf.push_str(&format!(" {}", trunc_pad(&crate::hash::uidtoname(ent.uid), 8, 32)));
+        }
+        // C: if (flag.g) sprintf(buf+n, " %-8.32s", gidtoname(ent->gid));
+        if FLAG.g {
+            buf.push_str(&format!(" {}", trunc_pad(&crate::hash::gidtoname(ent.gid), 8, 32)));
+        }
+        // C: if (flag.s) n += psize(buf+n, ent->size);
+        if FLAG.s {
+            psize(buf, ent.size);
+        }
+        // C: if (flag.D) sprintf(buf+n, " %s", do_date(flag.c? ent->ctime : ent->mtime));
+        if FLAG.D {
+            let t = if FLAG.c { ent.ctime } else { ent.mtime };
+            buf.push_str(&format!(" {}", do_date(t)));
+        }
+        #[cfg(target_os = "linux")]
+        // C: if (flag.selinux) sprintf(buf+n, " %s", ent->secontext);
+        if FLAG.selinux {
+            if let Some(sc) = &ent.secontext {
+                buf.push_str(&format!(" {}", sc));
+            }
+        }
+        // C: if (buf[0] == ' ') { buf[0] = '['; sprintf(buf+n, "]"); }
+        if buf.starts_with(' ') {
+            buf.replace_range(0..1, "[");
+            buf.push(']');
+        }
+    }
+}
+
+// === 原 C 函数：void print_version(int nl) ===
+/// 打印版本信息（%s 被 linedraw 的版权符号填充）。
+pub fn print_version(nl: bool) {
+    // C: v = version+12; sprintf(buf, "%.*s%s", strlen(v)-2, v, nl?"\n":"");
+    let v = &crate::globals::VERSION[12..crate::globals::VERSION.len() - 2];
+    // C: fprintf(outfile, buf, linedraw->copy);（buf 含一个 %s 占位）
+    // Rust 的 format_args! 要求字面量格式串，运行时格式串用 replace 处理
+    // unsafe：读取全局 LINEDRAW
+    let copy = String::from_utf8_lossy(unsafe { crate::color::LINEDRAW.copy }).into_owned();
+    let s = v.replace("%s", &copy);
+    out!("{}", s);
+    if nl {
+        out!("\n");
     }
 }
 

@@ -470,7 +470,7 @@ mod tests {
 
     #[test]
     fn test_filtercheck_basic() {
-        let _lock = STACK_LOCK.lock().unwrap();
+        let _lock = STACK_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         clear_stack();
         // 相对模式：按名字匹配
         push_patterns(&[("*.log", 1)], &[]);
@@ -487,7 +487,7 @@ mod tests {
 
     #[test]
     fn test_filtercheck_reverse() {
-        let _lock = STACK_LOCK.lock().unwrap();
+        let _lock = STACK_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         clear_stack();
         // 先过滤所有 .o，再用 ! 保留 keep.o
         push_patterns(&[("*.o", 1)], &[("keep.o", 1)]);
@@ -499,7 +499,7 @@ mod tests {
 
     #[test]
     fn test_filtercheck_dir_only() {
-        let _lock = STACK_LOCK.lock().unwrap();
+        let _lock = STACK_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         clear_stack();
         // 目录专用的模式（结尾 '/' 与 isdir 交互）
         push_patterns(&[("node_modules/", 1)], &[]);
@@ -516,3 +516,4 @@ mod tests {
         assert!(true);
     }
 }
+
