@@ -20,6 +20,11 @@ use crate::tree::{
  * 对应 C 的 FILE *outfile 以及 fprintf(outfile,...)/fputs/fputc。
  * ===================================================================== */
 
+// 测试专用的全局串行锁：多个测试模块共享 FLAG/OUTFILE/DIRS 等全局
+// 状态，cargo test 多线程并行时需串行化
+#[cfg(test)]
+pub static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 // 对应 C 的 scopy()/字符串常量：把 String 泄漏为 'static 字符串
 // （用于填入 static mut 的 Option<&str> 全局，模拟 C 中 malloc 后不释放的字符串）
 pub fn leak_str(s: String) -> &'static str {
