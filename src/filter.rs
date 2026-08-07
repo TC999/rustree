@@ -19,7 +19,8 @@ static mut FILTERSTACK: Option<Box<Ignorefile>> = None;
 /// 修剪 gitignore 行：去掉末尾换行与未转义空格，并删除转义用的反斜杠。
 /// C 按字节原地修改；Rust 中重建 String（反斜杠删除涉及字节级搬移）。
 /// 注意：忠实保留 C 的边界行为（如整行为单个 '\n' 时因 e>0 条件而不被剔除）。
-fn gittrim(s: &mut String) {
+/// info.c 的 new_infofile 也调用本函数（.info 文件行同样适用该修剪规则）。
+pub fn gittrim(s: &mut String) {
     let mut bytes = s.as_bytes().to_vec();
     // C: ssize_t i, e = (ssize_t)strlen(s)-1; if (e < 0) return;
     if bytes.is_empty() {
@@ -392,6 +393,11 @@ pub fn filtercheck(path: &str, name: &str, isdir: i32) -> bool {
 mod tests {
     use super::*;
     use crate::tree::{Flags, S_IFDIR, S_IFREG};
+    use std::sync::Mutex;
+
+    // 过滤测试共享全局 FILTERSTACK，必须串行执行。
+    // cargo test 默认多线程并行，用锁保证同一时刻只有一个测试操作过滤栈。
+    static STACK_LOCK: Mutex<()> = Mutex::new(());
 
     // 测试辅助：用模式构建过滤栈（绕过文件系统，直接构造 Pattern/Ignorefile）
     fn push_patterns(remove: &[(&str, i32)], reverse: &[(&str, i32)]) {
@@ -464,6 +470,7 @@ mod tests {
 
     #[test]
     fn test_filtercheck_basic() {
+        let _lock = STACK_LOCK.lock().unwrap();
         clear_stack();
         // 相对模式：按名字匹配
         push_patterns(&[("*.log", 1)], &[]);
@@ -480,6 +487,7 @@ mod tests {
 
     #[test]
     fn test_filtercheck_reverse() {
+        let _lock = STACK_LOCK.lock().unwrap();
         clear_stack();
         // 先过滤所有 .o，再用 ! 保留 keep.o
         push_patterns(&[("*.o", 1)], &[("keep.o", 1)]);
@@ -491,6 +499,7 @@ mod tests {
 
     #[test]
     fn test_filtercheck_dir_only() {
+        let _lock = STACK_LOCK.lock().unwrap();
         clear_stack();
         // 目录专用的模式（结尾 '/' 与 isdir 交互）
         push_patterns(&[("node_modules/", 1)], &[]);

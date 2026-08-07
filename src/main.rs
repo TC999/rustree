@@ -16,6 +16,7 @@ mod color;
 mod filter;
 mod globals;
 mod hash;
+mod info;
 mod strverscmp;
 mod tree;
 mod util;
