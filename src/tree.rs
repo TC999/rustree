@@ -20,6 +20,7 @@ pub const INFO_PATH: &str = "/usr/share/finfo/global_info";
 pub const MINIT: usize = 30;
 
 // 目录项数组的分配增量（tree.h: #define MINC 20）
+#[allow(dead_code)]
 pub const MINC: usize = 20;
 
 // 半年秒数，用于 do_date() 判断时间是否"过近"（tree.c: #define SIXMONTHS）
@@ -47,13 +48,17 @@ pub const S_ISGID: u32 = 0o002000; // set-group-ID
 pub const S_ISVTX: u32 = 0o001000; // sticky 位
 pub const S_IRWXU: u32 = 0o700; // 属主 rwx
 pub const S_IRUSR: u32 = 0o400; // 属主 r
+#[allow(dead_code)]
 pub const S_IWUSR: u32 = 0o200; // 属主 w
 pub const S_IXUSR: u32 = 0o100; // 属主 x
 pub const S_IRWXG: u32 = 0o070; // 组 rwx
+#[allow(dead_code)]
 pub const S_IRGRP: u32 = 0o040; // 组 r
+#[allow(dead_code)]
 pub const S_IWGRP: u32 = 0o020; // 组 w
 pub const S_IXGRP: u32 = 0o010; // 组 x
 pub const S_IRWXO: u32 = 0o007; // 其他 rwx
+#[allow(dead_code)]
 pub const S_IROTH: u32 = 0o004; // 其他 r
 pub const S_IWOTH: u32 = 0o002; // 其他 w
 pub const S_IXOTH: u32 = 0o001; // 其他 x
@@ -120,7 +125,10 @@ pub struct Flags {
     pub reverse: bool, // 反转排序顺序（-r）
     pub fflinks: bool, // 使用 --fromfile 时处理链接信息
     pub htmloffset: bool, // HTML 输出时对 baseHREF 做偏移
+    // Linux 专属字段：Windows 编译时不被读取（cfg(target_os="linux") 分支）
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub acl: bool, // 若存在 ACL 则在权限后打印 '+'
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub selinux: bool, // 打印 SELinux 安全标签
     pub condense_singletons: bool, // 将单例目录压缩为一行输出
     pub colorize: bool, // 是否使用颜色（由 parse_dir_colors 决定）
@@ -226,6 +234,7 @@ pub struct Linedraw {
  * 原 C 源码中该结构体未实际使用，仅为头文件定义。
  * ===================================================================== */
 #[derive(Debug, Default, Clone)]
+#[allow(dead_code)]
 pub struct MetaIds {
     pub name: String,
     pub term_flg: String,
@@ -366,8 +375,13 @@ fn metadata_to_fields(md: &std::fs::Metadata) -> StatFields {
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
     let readonly = md.permissions().readonly();
-    // 粗略近似：目录 0755、只读文件 0444、普通文件 0644
-    let mode = if md.is_dir() {
+    // Windows 的 lstat 语义：目录符号链接的 is_dir() 为 true，需用
+    // FILE_ATTRIBUTE_REPARSE_POINT (0x400) 检测符号链接（近似 S_IFLNK）。
+    let attrs = md.file_attributes();
+    // 粗略近似：符号链接 0777、目录 0755、只读文件 0444、普通文件 0644
+    let mode = if attrs & 0x400 != 0 {
+        0o120777
+    } else if md.is_dir() {
         0o40755
     } else if readonly {
         0o100444
@@ -382,9 +396,11 @@ fn metadata_to_fields(md: &std::fs::Metadata) -> StatFields {
         atime: mtime,
         ctime: mtime,
         mtime,
-        // Windows 的 volume_serial_number()/file_index() 当前仍为不稳定 API，置 0
-        dev: 0,
-        inode: 0,
+        // Windows 上以卷序列号/文件索引近似 st_dev/st_ino
+        //（std::os::windows::fs::MetadataExt，nightly feature windows_by_handle），
+        // 使 saveino/findino 的符号链接循环检测与 -x 正常工作。
+        dev: md.volume_serial_number().unwrap_or(0) as u64,
+        inode: md.file_index().unwrap_or(0),
     }
 }
 

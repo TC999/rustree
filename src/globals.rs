@@ -161,13 +161,14 @@ pub static mut CHARSET: Option<&'static str> = None;
  * ===================================================================== */
 
 // C: struct _info **(*getfulltree)(...) = unix_getfulltree;
-// 读取完整目录树的函数；--fromfile/--fromtabfile 会替换为 file.c 的实现。
-// 在 main() 中初始化为 Some(unix_getfulltree)。
-pub static mut GETFULLTREE: Option<Getfulltree> = None;
+// 读取完整目录树的函数（默认 unix_getfulltree，与 C 的全局初始化一致）；
+// --fromfile/--fromtabfile 会替换为 file.c 的实现。
+pub static mut GETFULLTREE: Option<Getfulltree> = Some(crate::unix_getfulltree);
 
 // C: int (*basesort)(struct _info **, struct _info **) = alnumsort;
-// 基础排序比较器；-U/-t/-c/-v/--sort 会修改。在 main() 中初始化为 Some(alnumsort)。
-pub static mut BASESORT: Option<SortFn> = None;
+// 基础排序比较器（默认 alnumsort，与 C 的全局初始化一致）；
+// -U/-t/-c/-v/--sort 会修改。
+pub static mut BASESORT: Option<SortFn> = Some(crate::alnumsort);
 
 // C: int (*topsort)(struct _info **, struct _info **) = NULL;
 // 顶层排序比较器；--dirsfirst/--filesfirst 设置，为 NULL 表示不排序。
@@ -190,6 +191,8 @@ pub static mut MAXDIRS: usize = 0;
 pub static mut ERRORS: i32 = 0;
 
 // C: char xpattern[PATH_MAX];（跨函数复用的工作缓冲区）
+// Rust 实现以局部 String 替代，声明保留以对应 C 全局。
+#[allow(dead_code)]
 pub static mut XPATTERN: String = String::new();
 
 // C: int mb_cur_max;（当前 locale 下多字节字符的最大字节数）

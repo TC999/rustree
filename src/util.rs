@@ -79,13 +79,17 @@ pub fn is_singleton(dir: &Info) -> bool {
 /// C 中 malloc 失败时打印 "tree: virtual memory exhausted." 并 exit(1)；
 /// Rust 中 Vec 分配失败时直接中止进程，行为等价（均为致命错误终止），
 /// 因此无需显式错误检查。主要供翻译中模拟"显式字节缓冲区"的场景使用。
+/// Rust 实现以 Vec/Box 分配替代，函数保留以对应 C 的逐函数翻译完整性。
+#[allow(dead_code)]
 pub fn xmalloc(size: usize) -> Vec<u8> {
     vec![0u8; size]
 }
 
 // === 原 C 函数：void *xrealloc(void *ptr, size_t size) ===
 /// 将缓冲区调整为 size 字节，保留原内容，新增部分零填充。
+/// 未被调用（Rust 中 Vec 的扩容替代），保留以对应 C 的逐函数翻译完整性。
 /// 语义与 C 的 realloc 相同；分配失败行为同 xmalloc 的说明。
+#[allow(dead_code)]
 pub fn xrealloc(ptr: Vec<u8>, size: usize) -> Vec<u8> {
     let mut v = ptr;
     v.resize(size, 0);

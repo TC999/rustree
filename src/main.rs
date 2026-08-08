@@ -4,13 +4,16 @@
 //
 // 翻译过程中临时允许 dead_code：尚未翻译完所有模块时，tree.rs 中已定义
 // 但尚未被引用的类型/常量会触发该警告；全部模块翻译完成后移除本属性。
-//
+//（已全部翻译完成，dead_code allow 已移除）
+
 // 允许 static_mut_refs：本程序为单线程，所有对 static mut 全局变量的
 // 访问均在 unsafe 块内并附中文注释，语义与 C 的全局变量一致；
 // 直接对 static mut 取引用的方法调用（如 STATIC.take()）因此被允许。
 
-#![allow(dead_code)]
 #![allow(static_mut_refs)]
+// Windows 的卷序列号/文件索引（st_dev/st_ino 近似）由 unstable feature
+// 门控；本项目使用 nightly 工具链（见环境检测），故按平台启用。
+#![cfg_attr(target_os = "windows", feature(windows_by_handle))]
 
 mod color;
 mod file;
@@ -258,8 +261,9 @@ use crate::filter::{
     filtercheck, gitignore_search, new_ignorefile, push_filterstack,
 };
 use crate::globals::{
-    DIRS, FLAG, IPATTERN, IPATTERNS, OUTFILE, PATTERN, PATTERNS,
+    DIRS, FLAG, GETFULLTREE, IPATTERN, IPATTERNS, OUTFILE, PATTERN, PATTERNS, leak_str,
 };
+use crate::hash::saveino;
 use crate::info::{infocheck, new_infofile, push_infostack};
 use crate::tree::{
     stat_fields, Info, StatFields, MINIT, SIXMONTHS, S_IFDIR, S_IFIFO, S_IFLNK, S_IFMT, S_IFREG,
@@ -417,9 +421,10 @@ pub fn selinux_context(path: &str) -> String {
     crate::hash::strhash(&String::from_utf8_lossy(&buf))
 }
 
-// === 原 C 函数：struct _info *getinfo(const char *name, char *path) ===
-/// 获取单个目录项的信息（lstat + 按需 stat 跟随），并应用过滤规则。
-pub fn getinfo(name: &str, path: &str) -> Option<Info> {
+// === 原 C 函数：struct _info *getinfo(const char *name, char *path, int infotop) ===
+/// 获取单个目录项的信息（lstat + 按需 stat 跟随），并应用过滤规则；
+/// infotop 非 0 时从 .info 文件提取注释（ent->comment）。
+pub fn getinfo(name: &str, path: &str, infotop: i32) -> Option<Info> {
     // C: if (lstat(path, &lst) < 0) return NULL;
     let lst = match crate::tree::lstat_fields(path) {
         Ok(s) => s,
@@ -525,6 +530,20 @@ pub fn getinfo(name: &str, path: &str) -> Option<Info> {
         }
     }
 
+    // C: if (flag.showinfo && (com = infocheck(path, name, infotop, isdir))) {
+    //       for(i = 0; com->desc[i] != NULL; i++);
+    //       ent->comment = xmalloc(sizeof(char *) * (i+1));
+    //       for(i = 0; com->desc[i] != NULL; i++) ent->comment[i] = scopy(com->desc[i]);
+    //       ent->comment[i] = NULL; }
+    // unsafe：读取全局 FLAG 并查询信息栈
+    unsafe {
+        if FLAG.showinfo {
+            if let Some(com) = infocheck(path, name, infotop, isdir) {
+                ent.comment = com.desc.clone();
+            }
+        }
+    }
+
     Some(ent)
 }
 
@@ -573,15 +592,8 @@ pub fn read_dir(dir: &str, n: &mut i64, infotop: i32) -> Option<Vec<Info>> {
             format!("{}/{}", dir, d_name)
         };
 
-        // C: info = getinfo(d_name, path);
-        if let Some(mut info) = getinfo(&d_name, &path) {
-            // C: if (flag.showinfo && (com = infocheck(path, d_name, infotop, info->isdir))) {
-            //      拷贝 com->desc 到 info->comment }
-            if unsafe { FLAG.showinfo } {
-                if let Some(com) = infocheck(&path, &d_name, infotop, info.isdir) {
-                    info.comment = com.desc.clone();
-                }
-            }
+        // C: info = getinfo(d_name, path, infotop);（注释提取在 getinfo 内完成）
+        if let Some(info) = getinfo(&d_name, &path, infotop) {
             dl.push(info);
         }
     }
@@ -860,7 +872,7 @@ pub fn printit(s: &str) {
                 if c > 13 {
                     outc!(c);
                 } else {
-                    // C: putc("abtnvfr"[c-7])（\a \b \t \n \v \f \r）
+                    // C: putc("abtnvfr"[c-7])（\a \x08 \t \n \v \x0c \r）
                     outc!(b"abtnvfr"[c as usize - 7]);
                 }
             } else if c.is_ascii_graphic() || c == b' ' {
@@ -1082,4 +1094,1239 @@ pub fn print_version(nl: bool) {
     }
 }
 
-fn main() {}
+// =====================================================================
+// tree.c 排序函数、sorts 表、long_arg、usage、unix_getfulltree
+// =====================================================================
+
+use crate::filter::pop_filterstack;
+use crate::globals::{
+    AUTHORITY, BASESORT, CHARSET, ERRORS, HINTRO, HOST, HOUTRO, LC, LEVEL, MAXDIRS, MAXIPATTERN,
+    MAXPATTERN, MB_CUR_MAX, NL, SCHEME, SP, TIMEFMT, TITLE, TOPSORT,
+};
+use crate::hash::findino;
+use crate::info::pop_infostack;
+use crate::list::{null_close, null_intro, null_outtro};
+use crate::tree::{Ignorefile, Infofile, ListingCalls, SortFn, PATH_MAX};
+use crate::unix::{unix_error, unix_newline, unix_printfile, unix_printinfo, unix_report};
+use crate::util::is_singleton;
+use crate::xml::{xml_close, xml_error, xml_intro, xml_newline, xml_outtro, xml_printfile, xml_printinfo, xml_report};
+use crate::json::{json_close, json_error, json_intro, json_newline, json_outtro, json_printfile, json_printinfo, json_report};
+
+#[cfg(target_os = "linux")]
+use std::os::fd::FromRawFd;
+
+// === 原 C 函数：int filesfirst(struct _info **a, struct _info **b) ===
+pub fn filesfirst(a: &Info, b: &Info) -> i32 {
+    if a.isdir != b.isdir {
+        return if a.isdir { 1 } else { -1 };
+    }
+    // C: return basesort(a, b);（basesort 为 NULL 时 C 会解引用崩溃；
+    // -U 与 --filesfirst 组合下 topsort 被 main 置 NULL，实际不会调用此处）
+    match unsafe { BASESORT } {
+        Some(f) => f(a, b),
+        None => 0,
+    }
+}
+
+// === 原 C 函数：int dirsfirst(struct _info **a, struct _info **b) ===
+pub fn dirsfirst(a: &Info, b: &Info) -> i32 {
+    if a.isdir != b.isdir {
+        return if a.isdir { -1 } else { 1 };
+    }
+    match unsafe { BASESORT } {
+        Some(f) => f(a, b),
+        None => 0,
+    }
+}
+
+// C 的 strcoll（locale 感知排序）；Rust std 无 strcoll，
+// 用字节序比较近似（locale 差异见注释，下同）
+fn name_cmp(a: &str, b: &str) -> i32 {
+    match a.as_bytes().cmp(b.as_bytes()) {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    }
+}
+
+// === 原 C 函数：int alnumsort(struct _info **a, struct _info **b) ===
+pub fn alnumsort(a: &Info, b: &Info) -> i32 {
+    // C: int v = strcoll((*a)->name, (*b)->name);
+    let v = name_cmp(&a.name, &b.name);
+    // unsafe：读取全局 FLAG
+    if unsafe { FLAG.reverse } {
+        -v
+    } else {
+        v
+    }
+}
+
+// === 原 C 函数：int versort(struct _info **a, struct _info **b) ===
+pub fn versort(a: &Info, b: &Info) -> i32 {
+    let v = crate::strverscmp::strverscmp(&a.name, &b.name);
+    if unsafe { FLAG.reverse } {
+        -v
+    } else {
+        v
+    }
+}
+
+// === 原 C 函数：int mtimesort(struct _info **a, struct _info **b) ===
+pub fn mtimesort(a: &Info, b: &Info) -> i32 {
+    if a.mtime == b.mtime {
+        let v = name_cmp(&a.name, &b.name);
+        return if unsafe { FLAG.reverse } { -v } else { v };
+    }
+    let v = if a.mtime < b.mtime { -1 } else { 1 };
+    if unsafe { FLAG.reverse } {
+        -v
+    } else {
+        v
+    }
+}
+
+// === 原 C 函数：int ctimesort(struct _info **a, struct _info **b) ===
+pub fn ctimesort(a: &Info, b: &Info) -> i32 {
+    if a.ctime == b.ctime {
+        let v = name_cmp(&a.name, &b.name);
+        return if unsafe { FLAG.reverse } { -v } else { v };
+    }
+    let v = if a.ctime < b.ctime { -1 } else { 1 };
+    if unsafe { FLAG.reverse } {
+        -v
+    } else {
+        v
+    }
+}
+
+// === 原 C 函数：int sizecmp(off_t a, off_t b) ===
+fn sizecmp(a: i64, b: i64) -> i32 {
+    // C: (a == b)? 0 : ((a < b)? 1 : -1)（注意 a<b 时返回 1，即大者在前）
+    if a == b {
+        0
+    } else if a < b {
+        1
+    } else {
+        -1
+    }
+}
+
+// === 原 C 函数：int fsizesort(struct _info **a, struct _info **b) ===
+pub fn fsizesort(a: &Info, b: &Info) -> i32 {
+    let mut v = sizecmp(a.size, b.size);
+    if v == 0 {
+        v = name_cmp(&a.name, &b.name);
+    }
+    if unsafe { FLAG.reverse } {
+        -v
+    } else {
+        v
+    }
+}
+
+// C: struct sorts sorts[] = {...};
+// {NULL, NULL} 哨兵以数组长度 + Option 表达
+struct Sort {
+    name: Option<&'static str>,
+    cmpfunc: Option<SortFn>,
+}
+
+static SORTS: [Sort; 6] = [
+    Sort { name: Some("name"), cmpfunc: Some(alnumsort) },
+    Sort { name: Some("version"), cmpfunc: Some(versort) },
+    Sort { name: Some("size"), cmpfunc: Some(fsizesort) },
+    Sort { name: Some("mtime"), cmpfunc: Some(mtimesort) },
+    Sort { name: Some("ctime"), cmpfunc: Some(ctimesort) },
+    Sort { name: Some("none"), cmpfunc: None },
+];
+
+// === 原 C 函数：char *long_arg(char *argv[], size_t i, size_t *j, size_t *n, char *prefix) ===
+/// 处理 `--prefix=value` 或 `--prefix value` 形式的长选项参数。
+/// C 返回 argv 内指针；Rust 返回借用 args 的 &str。
+fn long_arg<'a>(args: &'a [String], i: usize, j: &mut usize, n: &mut usize, prefix: &str) -> Option<&'a str> {
+    let argv_i = &args[i - 1];
+    // C: if (!strncmp(prefix, argv[i], len))
+    if argv_i.starts_with(prefix) {
+        // C: *j = len;
+        *j = prefix.len();
+        // C: if (*(argv[i] + (*j)) == '=')
+        if argv_i[*j..].starts_with('=') {
+            // C: if (*(argv[i] + (++(*j)))) —— '=' 之后非空
+            *j += 1;
+            if *j < argv_i.len() {
+                // C: ret = argv[i] + (*j); *j = strlen(argv[i])-1;
+                let ret = &argv_i[*j..];
+                *j = argv_i.len() - 1;
+                Some(ret)
+            } else {
+                // C: fprintf(stderr, "tree: Missing argument to %s=\n", prefix);
+                eprintln!("tree: Missing argument to {}=", prefix);
+                if prefix == "--charset=" {
+                    crate::color::initlinedraw(true);
+                }
+                std::process::exit(1);
+            }
+        } else if *n < args.len() + 1 {
+            // C: else if (argv[*n] != NULL) { ret = argv[*n]; (*n)++; *j = strlen(argv[i])-1; }
+            let ret = &args[*n - 1];
+            *n += 1;
+            *j = argv_i.len() - 1;
+            Some(ret)
+        } else {
+            // C: else { 报错 }
+            eprintln!("tree: Missing argument to {}", prefix);
+            if prefix == "--charset" {
+                crate::color::initlinedraw(true);
+            }
+            std::process::exit(1);
+        }
+    } else {
+        None
+    }
+}
+
+// === 原 C 函数：void usage(int n) ===
+/// 打印使用说明。n < 2 时输出到 stderr（错误时），否则 stdout 并 exit(0)。
+pub fn usage(n: i32) {
+    crate::color::parse_dir_colors();
+    crate::color::initlinedraw(false);
+
+    // C: fancy(n < 2 ? stderr : stdout, ...)（C 中传入 FILE* 流）
+    let mut err_out = std::io::stderr();
+    let mut stdout_out = std::io::stdout();
+    let out: &mut dyn std::io::Write = if n < 2 {
+        &mut err_out
+    } else {
+        &mut stdout_out
+    };
+    crate::color::fancy(out,
+        "usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n\
+\t[\x08-T\r \x0ctitle\r] [\x08-o\r \x0cfilename\r] [\x08-P\r \x0cpattern\r] [\x08-I\r \x0cpattern\r] [\x08--gitignore\r]\n\
+\t[\x08--gitfile\r[\x08=\r]\x0cfile\r] [\x08--matchdirs\r] [\x08--metafirst\r] [\x08--ignore-case\r]\n\
+\t[\x08--nolinks\r] [\x08--hintro\r[\x08=\r]\x0cfile\r] [\x08--houtro\r[\x08=\r]\x0cfile\r] [\x08--inodes\r] [\x08--device\r]\n\
+\t[\x08--sort\r[\x08=\r]\x0cname\r] [\x08--dirsfirst\r] [\x08--filesfirst\r] [\x08--filelimit\r[\x08=\r]\x0c#\r] [\x08--si\r]\n\
+\t[\x08--du\r] [\x08--prune\r] [\x08--charset\r[\x08=\r]\x0cX\r] [\x08--timefmt\r[\x08=\r]\x0cformat\r] [\x08--fromfile\r]\n\
+\t[\x08--fromtabfile\r] [\x08--fflinks\r] [\x08--info\r] [\x08--infofile\r[\x08=\r]\x0cfile\r] [\x08--noreport\r]\n\
+\t[\x08--hyperlink\r] [\x08--scheme\r[\x08=\r]\x0cschema\r] [\x08--authority\r[\x08=\r]\x0chost\r] [\x08--opt-toggle\r]\n\
+\t[\x08--compress\r[\x08=\r]\x0c#\r] [\x08--condense\r] [\x08--version\r] [\x08--help\r]\n\
+\t[\x08--\r] [\x0cdirectory\r \x08...\r]\n",
+    );
+
+    if n < 2 {
+        return;
+    }
+    crate::color::fancy(
+        &mut std::io::stdout(),
+        "  \x08------- Listing options -------\r\n\
+  \x08-a\r            All files are listed.\n\
+  \x08-d\r            List directories only.\n\
+  \x08-l\r            Follow symbolic links like directories.\n\
+  \x08-f\r            Print the full path prefix for each file.\n\
+  \x08-x\r            Stay on current filesystem only.\n\
+  \x08-L\r \x0clevel\r      Descend only \x0clevel\r directories deep.\n\
+  \x08-R\r            Rerun tree when max dir level reached.\n\
+  \x08-P\r \x0cpattern\r    List only those files that match the pattern given.\n\
+  \x08-I\r \x0cpattern\r    Do not list files that match the given pattern.\n\
+  \x08--gitignore\r   Filter by using \x08.gitignore\r files.\n\
+  \x08--gitfile\r \x0cX\r   Explicitly read a gitignore file.\n\
+  \x08--ignore-case\r Ignore case when pattern matching.\n\
+  \x08--matchdirs\r   Include directory names in \x08-P\r pattern matching.\n\
+  \x08--metafirst\r   Print meta-data at the beginning of each line.\n\
+  \x08--prune\r       Prune empty directories from the output.\n\
+  \x08--info\r        Print information about files found in \x08.info\r files.\n\
+  \x08--infofile\r \x0cX\r  Explicitly read info file.\n\
+  \x08--noreport\r    Turn off file/directory count at end of tree listing.\n\
+  \x08--charset\r \x0cX\r   Use charset \x0cX\r for terminal/HTML and indentation line output.\n\
+  \x08--filelimit\r \x0c#\r Do not descend dirs with more than \x0c#\r files in them.\n\
+  \x08--condense\r    Condense directory singletons to a single line of output.\n\
+  \x08-o\r \x0cfilename\r   Output to file instead of stdout.\n\
+  \x08------- File options -------\r\n\
+  \x08-q\r            Print non-printable characters as '\x08?\r'.\n\
+  \x08-N\r            Print non-printable characters as is.\n\
+  \x08-Q\r            Quote filenames with double quotes.\n\
+  \x08-p\r            Print the protections for each file.\n\
+  \x08-u\r            Displays file owner or UID number.\n\
+  \x08-g\r            Displays file group owner or GID number.\n\
+  \x08-s\r            Print the size in bytes of each file.\n\
+  \x08-h\r            Print the size in a more human readable way.\n\
+  \x08--si\r          Like \x08-h\r, but use in SI units (powers of 1000).\n\
+  \x08--du\r          Compute size of directories by their contents.\n\
+  \x08-D\r            Print the date of last modification or (-c) status change.\n\
+  \x08--timefmt\r \x0cfmt\r Print and format time according to the format \x0cfmt\r.\n\
+  \x08-F\r            Appends '\x08/\r', '\x08=\r', '\x08*\r', '\x08@\r', '\x08|\r' or '\x08>\r' as per \x08ls -F\r.\n\
+  \x08--inodes\r      Print inode number of each file.\n\
+  \x08--device\r      Print device ID number to which each file belongs.\n\
+  \x08------- Sorting options -------\r\n\
+  \x08-v\r            Sort files alphanumerically by version.\n\
+  \x08-t\r            Sort files by last modification time.\n\
+  \x08-c\r            Sort files by last status change time.\n\
+  \x08-U\r            Leave files unsorted.\n\
+  \x08-r\r            Reverse the order of the sort.\n\
+  \x08--dirsfirst\r   List directories before files (\x08-U\r disables).\n\
+  \x08--filesfirst\r  List files before directories (\x08-U\r disables).\n\
+  \x08--sort\r \x0cX\r      Select sort: \x08\x0cname\r,\x08\x0cversion\r,\x08\x0csize\r,\x08\x0cmtime\r,\x08\x0cctime\r,\x08\x0cnone\r.\n\
+  \x08------- Graphics options -------\r\n\
+  \x08-i\r            Don't print indentation lines.\n\
+  \x08-A\r            Print ANSI lines graphic indentation lines.\n\
+  \x08-S\r            Print with CP437 (console) graphics indentation lines.\n\
+  \x08-n\r            Turn colorization off always (\x08-C\r overrides).\n\
+  \x08-C\r            Turn colorization on always.\n\
+  \x08--compress\r \x0c#\r  Compress indentation lines.\n\
+  \x08------- XML/HTML/JSON/HYPERLINK options -------\r\n\
+  \x08-X\r            Prints out an XML representation of the tree.\n\
+  \x08-J\r            Prints out an JSON representation of the tree.\n\
+  \x08-H\r \x0cbaseHREF\r   Prints out HTML format with \x0cbaseHREF\r as top directory.\n\
+  \x08-T\r \x0cstring\r     Replace the default HTML title and H1 header with \x0cstring\r.\n\
+  \x08--nolinks\r     Turn off hyperlinks in HTML output.\n\
+  \x08--hintro\r \x0cX\r    Use file \x0cX\r as the HTML intro.\n\
+  \x08--houtro\r \x0cX\r    Use file \x0cX\r as the HTML outro.\n\
+  \x08--hyperlink\r   Turn on OSC 8 terminal hyperlinks.\n\
+  \x08--scheme\r \x0cX\r    Set OSC 8 hyperlink scheme, default \x08\x0cfile://\r\n\
+  \x08--authority\r \x0cX\r Set OSC 8 hyperlink authority/hostname.\n\
+  \x08------- Input options -------\r\n\
+  \x08--fromfile\r    Reads paths from files (\x08.\r=stdin)\n\
+  \x08--fromtabfile\r Reads trees from tab indented files (\x08.\r=stdin)\n\
+  \x08--fflinks\r     Process link information when using \x08--fromfile\r.\n\
+  \x08------- Miscellaneous options -------\r\n\
+  \x08--opt-toggle\r  Enable option toggling.\n\
+  \x08--version\r     Print version and exit.\n\
+  \x08--help\r        Print usage and this help message and exit.\n\
+  \x08--\r            Options processing terminator.\n",
+    );
+    std::process::exit(0);
+}
+
+// === 原 C 函数：struct _info **unix_getfulltree(char *d, u_long lev, dev_t dev, off_t *size, char **err) ===
+/// 读取完整目录树（--du/--prune/--matchdirs/--condense 时使用）。
+/// 递归遍历，处理符号链接循环检测与 -f/-x/-L/--filelimit/prune/condense。
+pub fn unix_getfulltree(
+    d: &str,
+    lev: u64,
+    mut dev: u64,
+    size: &mut i64,
+    err: &mut Option<String>,
+) -> Option<Vec<Info>> {
+    // path 的初始赋值对应 C 的 xmalloc(pathsize=PATH_MAX)，循环内被覆盖，
+    // 初始值本身不读（C 语义）
+    #[allow(unused_assignments)]
+    let mut path = String::new();
+    let mut pathsize: usize = PATH_MAX;
+    // C: *err = NULL;
+    *err = None;
+    // C: if (Level >= 0 && lev > (u_long)Level) return NULL;
+    if unsafe { LEVEL } >= 0 && lev as i64 > unsafe { LEVEL } {
+        return None;
+    }
+    // C: if (flag.xdev && lev == 0) { stat(d, &sb); dev = sb.st_dev; }
+    if unsafe { FLAG.xdev } && lev == 0 {
+        if let Ok(sb) = stat_fields(d) {
+            dev = sb.dev;
+        }
+    }
+
+    // C: last_name = strrchr(d, file_pathsep[0]);
+    let last_name = d.rfind('/');
+    // C: if (pattern && (patinclude(d, true, true) ||
+    //                    (last_name && patinclude(last_name+1, true, false)))) { tmp_pattern = pattern; pattern = 0; }
+    let mut tmp_pattern: i32 = 0;
+    // unsafe：读写全局 PATTERN
+    unsafe {
+        if PATTERN != 0 {
+            let d_match = patinclude(d, true, true) == 1;
+            let name_match = last_name
+                .map(|pos| patinclude(&d[pos + 1..], true, false) == 1)
+                .unwrap_or(false);
+            if d_match || name_match {
+                tmp_pattern = PATTERN;
+                PATTERN = 0;
+            }
+        }
+    }
+
+    // C: push_files(d, &ig, &inf, lev==0);
+    let mut ig: Option<Box<Ignorefile>> = None;
+    let mut inf: Option<Box<Infofile>> = None;
+    push_files(d, &mut ig, &mut inf, lev == 0);
+
+    // C: sav = dir = read_dir(d, &n, inf != NULL);
+    let mut n: i64 = 0;
+    let mut sav = read_dir(d, &mut n, if inf.is_some() { 1 } else { 0 });
+
+    // C: if (dir == NULL && n) { *err = scopy("error opening dir"); ... return NULL; }
+    if sav.is_none() && n != 0 {
+        *err = Some("error opening dir".to_string());
+        if tmp_pattern != 0 {
+            // unsafe：恢复全局 PATTERN
+            unsafe { PATTERN = tmp_pattern; }
+        }
+        return None;
+    }
+    // C: if (n == 0) { if (sav != NULL) free_dir(sav); ... return NULL; }
+    if n == 0 {
+        if tmp_pattern != 0 {
+            // unsafe：恢复全局 PATTERN
+            unsafe { PATTERN = tmp_pattern; }
+        }
+        return None;
+    }
+
+    // C: path = xmalloc(pathsize = PATH_MAX);（path/pathsize 已在函数开头定义）
+
+    // C: if (flag.flimit > 0 && n > flag.flimit) { *err = ...; return NULL; }
+    // unsafe：读取全局 FLAG
+    unsafe {
+        if FLAG.flimit > 0 && n > FLAG.flimit as i64 {
+            *err = Some(format!("{} entries exceeds filelimit, not opening dir", n));
+            if tmp_pattern != 0 {
+                PATTERN = tmp_pattern;
+            }
+            return None;
+        }
+    }
+
+    // C: if (lev >= (u_long)maxdirs-1) dirs = xrealloc(...)
+    // unsafe：读写全局 DIRS/MAXDIRS
+    unsafe {
+        if lev as usize >= MAXDIRS.saturating_sub(1) {
+            MAXDIRS += 1024;
+            DIRS.resize(MAXDIRS, 0);
+        }
+    }
+
+    // C: while (*dir) { ... }
+    // n > 0 时 read_dir 返回 Some（上方 n==0 已提前返回）
+    let sav_vec = sav.as_mut().expect("n>0 时 sav 非空");
+    let mut idx = 0;
+    while idx < sav_vec.len() {
+        // C: if ((*dir)->isdir && !(flag.xdev && dev != (*dir)->dev))
+        if sav_vec[idx].isdir && !(unsafe { FLAG.xdev } && dev != sav_vec[idx].dev) {
+            if sav_vec[idx].lnk.is_some() {
+                // C: if (flag.l) { ... }
+                if unsafe { FLAG.l } {
+                    if findino(sav_vec[idx].inode, sav_vec[idx].dev) {
+                        sav_vec[idx].err = Some("recursive, not followed".to_string());
+                    } else {
+                        saveino(sav_vec[idx].inode, sav_vec[idx].dev);
+                        let lnk = sav_vec[idx].lnk.clone().unwrap();
+                        if lnk.starts_with('/') {
+                            // C: (*dir)->child = unix_getfulltree((*dir)->lnk, lev+1, ...)
+                            let mut child_err: Option<String> = None;
+                            let mut child_size: i64 = sav_vec[idx].size;
+                            let child = unix_getfulltree(&lnk, lev + 1, dev, &mut child_size, &mut child_err);
+                            sav_vec[idx].child = child;
+                            sav_vec[idx].size = child_size;
+                            sav_vec[idx].err = child_err;
+                        } else {
+                            // C: if (strlen(d)+strlen(lnk)+2 > pathsize) path = xrealloc(...)
+                            if d.len() + lnk.len() + 2 > pathsize {
+                                pathsize = d.len() + lnk.len() + 1024;
+                            }
+                            // C: if (flag.f && !strcmp(d,"/")) sprintf(path,"%s%s",d,lnk);
+                            //     else sprintf(path,"%s/%s",d,lnk);
+                            path = if unsafe { FLAG.f } && d == "/" {
+                                format!("{}{}", d, lnk)
+                            } else {
+                                format!("{}/{}", d, lnk)
+                            };
+                            let mut child_err: Option<String> = None;
+                            let mut child_size: i64 = sav_vec[idx].size;
+                            let child = unix_getfulltree(&path, lev + 1, dev, &mut child_size, &mut child_err);
+                            sav_vec[idx].child = child;
+                            sav_vec[idx].size = child_size;
+                            sav_vec[idx].err = child_err;
+                        }
+                    }
+                }
+            } else {
+                // C: 非链接目录
+                if d.len() + sav_vec[idx].name.len() + 2 > pathsize {
+                    pathsize = d.len() + sav_vec[idx].name.len() + 1024;
+                }
+                path = if unsafe { FLAG.f } && d == "/" {
+                    format!("{}{}", d, sav_vec[idx].name)
+                } else {
+                    format!("{}/{}", d, sav_vec[idx].name)
+                };
+                saveino(sav_vec[idx].inode, sav_vec[idx].dev);
+                let mut child_err: Option<String> = None;
+                let mut child_size: i64 = sav_vec[idx].size;
+                let child = unix_getfulltree(&path, lev + 1, dev, &mut child_size, &mut child_err);
+                sav_vec[idx].child = child;
+                sav_vec[idx].size = child_size;
+                sav_vec[idx].err = child_err;
+
+                // C: if (flag.condense_singletons) { while (is_singleton(*dir)) { ... } }
+                if unsafe { FLAG.condense_singletons } {
+                    while is_singleton(&sav_vec[idx]) {
+                        let child: Vec<Info> = sav_vec[idx].child.take().expect("is_singleton 要求 child 非空");
+                        let name = pathconcat(&sav_vec[idx].name, &[&child[0].name]);
+                        sav_vec[idx].name = name;
+                        let mut child0 = child.into_iter().next().unwrap();
+                        sav_vec[idx].child = child0.child.take();
+                        sav_vec[idx].condensed = sav_vec[idx].condensed + 1 + child0.condensed;
+                    }
+                }
+            }
+            // C: if (flag.prune && (*dir)->child == NULL &&
+            //        !(flag.matchdirs && pattern && patinclude((*dir)->name, isdir, false))) { 删除并 continue; }
+            // unsafe：读取全局 FLAG/PATTERN
+            unsafe {
+                let prune_cond = FLAG.prune
+                    && sav_vec[idx].child.is_none()
+                    && !(FLAG.matchdirs
+                        && PATTERN != 0
+                        && patinclude(&sav_vec[idx].name, sav_vec[idx].isdir, false) == 1);
+                if prune_cond {
+                    // C: for(p=dir;*p;p++) *p = *(p+1); n--; free(xp);
+                    sav_vec.remove(idx);
+                    n -= 1;
+                    continue;
+                }
+            }
+        }
+        // C: if (flag.du) *size += (*dir)->size;
+        if unsafe { FLAG.du } {
+            *size += sav_vec[idx].size;
+        }
+        idx += 1;
+    }
+
+    // C: if (tmp_pattern) { pattern = tmp_pattern; tmp_pattern = 0; }
+    if tmp_pattern != 0 {
+        // unsafe：恢复全局 PATTERN
+        unsafe { PATTERN = tmp_pattern; }
+    }
+
+    // C: if (topsort) qsort(sav, n, ...)（qsort 不稳定 → sort_unstable_by）
+    if let Some(f) = unsafe { TOPSORT } {
+        sav.as_mut().unwrap().sort_unstable_by(|a, b| f(a, b).cmp(&0));
+    }
+
+    // C: if (n == 0) { free_dir(sav); return NULL; }
+    if n == 0 {
+        return None;
+    }
+    // C: if (ig != NULL) pop_filterstack();
+    if ig.is_some() {
+        pop_filterstack();
+    }
+    // C: if (inf != NULL) pop_infostack();
+    if inf.is_some() {
+        pop_infostack();
+    }
+    sav
+}
+
+// === 原 C 函数：int main(int argc, char **argv) ===
+fn main() {
+    // C 中 argv[0] 是程序名；Rust 的 args 已跳过
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let argc = args.len() + 1; // C 的 argc（含程序名）
+
+    let mut dirname: Vec<String> = Vec::new();
+    let mut outfilename: Option<String> = None;
+    let needfulltree: bool;
+    // 说明：needfulltree 在参数解析后的 unsafe 块中一次性赋值（对应 C 中
+    // bool needfulltree = flag.du || ... 的语义），声明为不可变延迟初始化
+    let mut showversion = false;
+    let mut opt_toggle = false;
+    let mut optf = true;
+
+    // C: memset(&flag, 0, sizeof(flag));（Flags::new() 全 false，static 已初始化）
+    // C: dirs = xmalloc(...maxdirs=PATH_MAX); memset(dirs, 0, ...);
+    // unsafe：初始化全局 DIRS/MAXDIRS/LEVEL
+    unsafe {
+        MAXDIRS = PATH_MAX;
+        DIRS.resize(MAXDIRS, 0);
+        LEVEL = -1;
+    }
+
+    // C: setlocale(LC_CTYPE, ""); setlocale(LC_COLLATE, "");
+    // unsafe：调用 C 库函数 setlocale（libc 无安全封装）
+    #[cfg(unix)]
+    unsafe {
+        let empty = std::ffi::CString::new("").unwrap();
+        libc::setlocale(libc::LC_CTYPE, empty.as_ptr());
+        libc::setlocale(libc::LC_COLLATE, empty.as_ptr());
+    }
+
+    // C: charset = getcharset(); if (charset == NULL && nl_langinfo(CODESET) 是 UTF-8) charset = "UTF-8";
+    // unsafe：读写全局 CHARSET
+    unsafe {
+        CHARSET = crate::color::getcharset();
+        #[cfg(unix)]
+        if CHARSET.is_none() {
+            // unsafe：调用 C 库函数 nl_langinfo（libc 无安全封装）
+            let cs = std::ffi::CStr::from_ptr(libc::nl_langinfo(libc::CODESET));
+            let cs = cs.to_string_lossy();
+            if cs == "UTF-8" || cs == "utf8" {
+                CHARSET = Some("UTF-8");
+            }
+        }
+        #[cfg(not(unix))]
+        if CHARSET.is_none() {
+            // 非 Unix 平台无 nl_langinfo；保持 None（字符集由 getcharset 决定）
+        }
+    }
+
+    // C: lc = (struct listingcalls){ null_intro, ..., unix_report };
+    // unsafe：写全局 LC
+    unsafe {
+        LC = Some(ListingCalls {
+            intro: null_intro,
+            outtro: null_outtro,
+            printinfo: unix_printinfo,
+            printfile: unix_printfile,
+            error: unix_error,
+            newline: unix_newline,
+            close: null_close,
+            report: unix_report,
+        });
+    }
+
+    // C: #ifdef MB_CUR_MAX mb_cur_max = MB_CUR_MAX; #else 1
+    // Rust 字符串恒为 UTF-8：设 4（UTF-8 最大字节数），使 printit 走字符路径
+    //（等价于 C 在 UTF-8 locale 下的行为）
+    // unsafe：写全局 MB_CUR_MAX
+    unsafe {
+        MB_CUR_MAX = 4;
+    }
+
+    // C: #ifdef __linux__ 的 STDDATA_FD 处理（JSON 自动输出到 stddata fd）
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(fd_str) = std::env::var(ENV_STDDATA_FD) {
+            let mut std_fd = fd_str.parse::<i32>().unwrap_or(0);
+            if std_fd <= 0 {
+                std_fd = STDDATA_FILENO;
+            }
+            // C: if (fcntl(std_fd, F_GETFD) >= 0)
+            // unsafe：调用 C 库函数 fcntl（libc 无安全封装）
+            let ok = unsafe { libc::fcntl(std_fd, libc::F_GETFD) >= 0 };
+            if ok {
+                // unsafe：读写全局 FLAG/NL/LC/OUTFILE
+                unsafe {
+                    FLAG.J = true;
+                    FLAG.noindent = true;
+                    NL = "";
+                    LC = Some(ListingCalls {
+                        intro: json_intro,
+                        outtro: json_outtro,
+                        printinfo: json_printinfo,
+                        printfile: json_printfile,
+                        error: json_error,
+                        newline: json_newline,
+                        close: json_close,
+                        report: json_report,
+                    });
+                    // C: outfile = fdopen(std_fd, "w");
+                    // 用 std::os::fd::FromRawFd 包装（接管 fd 的所有权）
+                    let file = std::fs::File::from_raw_fd(std_fd);
+                    OUTFILE = Some(Box::new(std::io::BufWriter::new(file)));
+                }
+            }
+        }
+    }
+
+    crate::hash::init_hashes();
+
+    // C: for(n=i=1; i<(size_t)argc; i=n) { n++; ... }
+    // 所有对全局状态的读写都在 unsafe 块内（单线程）
+    // j/n 的“赋值后不读”对应 C 中 for 循环的 j++/n++ 推进，语义保留
+    #[allow(unused_assignments)]
+    unsafe {
+        let mut i: usize = 1;
+        let mut n: usize;
+        let mut j: usize;
+        while i < argc {
+            n = i + 1;
+            let argi = &args[i - 1];
+            if optf && argi.starts_with('-') && argi.len() > 1 {
+                let bytes = argi.as_bytes();
+                j = 1;
+                while j < bytes.len() {
+                    match bytes[j] {
+                        b'N' => {
+                            FLAG.N = if opt_toggle { !FLAG.N } else { true };
+                        }
+                        b'q' => {
+                            FLAG.q = if opt_toggle { !FLAG.q } else { true };
+                        }
+                        b'Q' => {
+                            FLAG.Q = if opt_toggle { !FLAG.Q } else { true };
+                        }
+                        b'd' => {
+                            FLAG.d = if opt_toggle { !FLAG.d } else { true };
+                        }
+                        b'l' => {
+                            FLAG.l = if opt_toggle { !FLAG.l } else { true };
+                        }
+                        b's' => {
+                            FLAG.s = if opt_toggle { !FLAG.s } else { true };
+                        }
+                        b'h' => {
+                            // C: /* Assume they also want -s */ flag.s = (flag.h = ...);
+                            FLAG.h = if opt_toggle { !FLAG.h } else { true };
+                            FLAG.s = FLAG.h;
+                        }
+                        b'u' => {
+                            FLAG.u = if opt_toggle { !FLAG.u } else { true };
+                        }
+                        b'g' => {
+                            FLAG.g = if opt_toggle { !FLAG.g } else { true };
+                        }
+                        b'f' => {
+                            FLAG.f = if opt_toggle { !FLAG.f } else { true };
+                        }
+                        b'F' => {
+                            FLAG.F = if opt_toggle { !FLAG.F } else { true };
+                        }
+                        b'a' => {
+                            FLAG.a = if opt_toggle { !FLAG.a } else { true };
+                        }
+                        b'p' => {
+                            FLAG.p = if opt_toggle { !FLAG.p } else { true };
+                        }
+                        b'i' => {
+                            FLAG.noindent = if opt_toggle { !FLAG.noindent } else { true };
+                            // C: _nl = "";
+                            NL = "";
+                        }
+                        b'C' => {
+                            FLAG.force_color = if opt_toggle { !FLAG.force_color } else { true };
+                        }
+                        b'n' => {
+                            FLAG.nocolor = if opt_toggle { !FLAG.nocolor } else { true };
+                        }
+                        b'x' => {
+                            FLAG.xdev = if opt_toggle { !FLAG.xdev } else { true };
+                        }
+                        b'P' => {
+                            if n >= argc {
+                                eprintln!("tree: Missing argument to -P option.");
+                                std::process::exit(1);
+                            }
+                            // C: if (pattern >= maxpattern-1) patterns = xrealloc(...)
+                            //     patterns[pattern++] = argv[n++]; patterns[pattern] = NULL;
+                            // Vec 自动扩容，保留 maxpattern 逻辑
+                            if PATTERN >= MAXPATTERN - 1 {
+                                MAXPATTERN += 10;
+                            }
+                            PATTERNS.push(args[n - 1].clone());
+                            PATTERN += 1;
+                            n += 1;
+                        }
+                        b'I' => {
+                            if n >= argc {
+                                eprintln!("tree: Missing argument to -I option.");
+                                std::process::exit(1);
+                            }
+                            if IPATTERN >= MAXIPATTERN - 1 {
+                                MAXIPATTERN += 10;
+                            }
+                            IPATTERNS.push(args[n - 1].clone());
+                            IPATTERN += 1;
+                            n += 1;
+                        }
+                        b'A' => {
+                            FLAG.ansilines = if opt_toggle { !FLAG.ansilines } else { true };
+                        }
+                        b'S' => {
+                            CHARSET = Some("IBM437");
+                        }
+                        b'D' => {
+                            FLAG.D = if opt_toggle { !FLAG.D } else { true };
+                        }
+                        b't' => {
+                            BASESORT = Some(mtimesort);
+                        }
+                        b'c' => {
+                            BASESORT = Some(ctimesort);
+                            FLAG.c = true;
+                        }
+                        b'r' => {
+                            FLAG.reverse = if opt_toggle { !FLAG.reverse } else { true };
+                        }
+                        b'v' => {
+                            BASESORT = Some(versort);
+                        }
+                        b'U' => {
+                            BASESORT = None;
+                        }
+                        b'X' => {
+                            FLAG.X = true;
+                            FLAG.H = false;
+                            FLAG.J = false;
+                            LC = Some(ListingCalls {
+                                intro: xml_intro,
+                                outtro: xml_outtro,
+                                printinfo: xml_printinfo,
+                                printfile: xml_printfile,
+                                error: xml_error,
+                                newline: xml_newline,
+                                close: xml_close,
+                                report: xml_report,
+                            });
+                        }
+                        b'J' => {
+                            FLAG.J = true;
+                            FLAG.X = false;
+                            FLAG.H = false;
+                            LC = Some(ListingCalls {
+                                intro: json_intro,
+                                outtro: json_outtro,
+                                printinfo: json_printinfo,
+                                printfile: json_printfile,
+                                error: json_error,
+                                newline: json_newline,
+                                close: json_close,
+                                report: json_report,
+                            });
+                        }
+                        b'H' => {
+                            FLAG.H = true;
+                            FLAG.X = false;
+                            FLAG.J = false;
+                            LC = Some(ListingCalls {
+                                intro: crate::html::html_intro,
+                                outtro: crate::html::html_outtro,
+                                printinfo: crate::html::html_printinfo,
+                                printfile: crate::html::html_printfile,
+                                error: crate::html::html_error,
+                                newline: crate::html::html_newline,
+                                close: crate::html::html_close,
+                                report: crate::html::html_report,
+                            });
+                            if n >= argc {
+                                eprintln!("tree: Missing argument to -H option.");
+                                std::process::exit(1);
+                            }
+                            let mut host = args[n - 1].clone();
+                            n += 1;
+                            // C: k = strlen(host)-1;（仅被注释代码使用，省略）
+                            if host.starts_with('-') {
+                                FLAG.htmloffset = true;
+                                host = host[1..].to_string();
+                            }
+                            HOST = Some(leak_str(host));
+                            // C: sp = "&nbsp;";
+                            SP = "&nbsp;";
+                        }
+                        b'T' => {
+                            if n >= argc {
+                                eprintln!("tree: Missing argument to -T option.");
+                                std::process::exit(1);
+                            }
+                            TITLE = leak_str(args[n - 1].clone());
+                            n += 1;
+                        }
+                        b'R' => {
+                            FLAG.R = if opt_toggle { !FLAG.R } else { true };
+                        }
+                        b'L' => {
+                            // C: if (isdigit(argv[i][j+1])) { 内联数字 } else { sLevel = argv[n++]; }
+                            let next_digit = bytes.get(j + 1).is_some_and(|c| c.is_ascii_digit());
+                            let s_level: String = if next_digit {
+                                let mut k = 0;
+                                let mut s = String::new();
+                                while let Some(&c2) = bytes.get(j + 1 + k) {
+                                    if !c2.is_ascii_digit() {
+                                        break;
+                                    }
+                                    if k >= PATH_MAX - 1 {
+                                        break;
+                                    }
+                                    s.push(c2 as char);
+                                    k += 1;
+                                }
+                                j += k;
+                                s
+                            } else {
+                                if n >= argc {
+                                    eprintln!("tree: Missing argument to -L option.");
+                                    std::process::exit(1);
+                                }
+                                let s = args[n - 1].clone();
+                                n += 1;
+                                s
+                            };
+                            // C: Level = (int)strtoul(sLevel, NULL, 0) - 1;
+                            LEVEL = s_level.parse::<u64>().unwrap_or(0) as i64 - 1;
+                            if LEVEL < 0 {
+                                eprintln!("tree: Invalid level, must be greater than 0.");
+                                std::process::exit(1);
+                            }
+                        }
+                        b'o' => {
+                            if n >= argc {
+                                eprintln!("tree: Missing argument to -o option.");
+                                std::process::exit(1);
+                            }
+                            outfilename = Some(args[n - 1].clone());
+                            n += 1;
+                        }
+                        b'-' => {
+                            if j == 1 {
+                                // C: 长选项处理
+                                if argi == "--" {
+                                    optf = false;
+                                    break;
+                                }
+                                if argi == "--help" {
+                                    usage(2);
+                                    std::process::exit(0);
+                                }
+                                if argi == "--version" {
+                                    j = argi.len() - 1;
+                                    showversion = true;
+                                    break;
+                                }
+                                if argi == "--inodes" {
+                                    j = argi.len() - 1;
+                                    FLAG.inode = if opt_toggle { !FLAG.inode } else { true };
+                                    break;
+                                }
+                                if argi == "--device" {
+                                    j = argi.len() - 1;
+                                    FLAG.dev = if opt_toggle { !FLAG.dev } else { true };
+                                    break;
+                                }
+                                if argi == "--noreport" {
+                                    j = argi.len() - 1;
+                                    FLAG.noreport = if opt_toggle { !FLAG.noreport } else { true };
+                                    break;
+                                }
+                                if argi == "--nolinks" {
+                                    j = argi.len() - 1;
+                                    FLAG.nolinks = if opt_toggle { !FLAG.nolinks } else { true };
+                                    break;
+                                }
+                                if argi == "--dirsfirst" {
+                                    j = argi.len() - 1;
+                                    TOPSORT = Some(dirsfirst);
+                                    break;
+                                }
+                                if argi == "--filesfirst" {
+                                    j = argi.len() - 1;
+                                    TOPSORT = Some(filesfirst);
+                                    break;
+                                }
+                                if let Some(a) = long_arg(&args, i, &mut j, &mut n, "--filelimit") {
+                                    FLAG.flimit = a.parse::<i32>().unwrap_or(0);
+                                    break;
+                                }
+                                if let Some(a) = long_arg(&args, i, &mut j, &mut n, "--charset") {
+                                    // C: charset = arg（argv 指针，进程级生命周期）→ leak_str 提升为 'static
+                                    CHARSET = Some(leak_str(a.to_string()));
+                                    break;
+                                }
+                                if argi == "--si" {
+                                    j = argi.len() - 1;
+                                    FLAG.s = true;
+                                    FLAG.h = true;
+                                    FLAG.si = if opt_toggle { !FLAG.si } else { true };
+                                    break;
+                                }
+                                if argi == "--du" {
+                                    j = argi.len() - 1;
+                                    FLAG.s = if opt_toggle { !FLAG.du } else { true };
+                                    FLAG.du = FLAG.s;
+                                    break;
+                                }
+                                if argi == "--prune" {
+                                    j = argi.len() - 1;
+                                    FLAG.prune = if opt_toggle { !FLAG.prune } else { true };
+                                    break;
+                                }
+                                if let Some(a) = long_arg(&args, i, &mut j, &mut n, "--timefmt") {
+                                    TIMEFMT = Some(leak_str(a.to_string()));
+                                    FLAG.D = true;
+                                    break;
+                                }
+                                if argi == "--ignore-case" {
+                                    j = argi.len() - 1;
+                                    FLAG.ignorecase = if opt_toggle { !FLAG.ignorecase } else { true };
+                                    break;
+                                }
+                                if argi == "--matchdirs" {
+                                    j = argi.len() - 1;
+                                    FLAG.matchdirs = if opt_toggle { !FLAG.matchdirs } else { true };
+                                    break;
+                                }
+                                if let Some(a) = long_arg(&args, i, &mut j, &mut n, "--sort") {
+                                    BASESORT = None;
+                                    let mut found = false;
+                                    for s in SORTS.iter() {
+                                        if let Some(name) = s.name {
+                                            if name.eq_ignore_ascii_case(a) {
+                                                BASESORT = s.cmpfunc;
+                                                found = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if !found {
+                                        // C: fprintf(stderr, "tree: Sort type '%s' not valid, should be one of: ", arg);
+                                        let names: Vec<&str> = SORTS
+                                            .iter()
+                                            .filter_map(|s| s.name)
+                                            .collect();
+                                        eprintln!(
+                                            "tree: Sort type '{}' not valid, should be one of: {}",
+                                            a,
+                                            names.join(",")
+                                        );
+                                        std::process::exit(1);
+                                    }
+                                    break;
+                                }
+                                if argi == "--fromtabfile" {
+                                    j = argi.len() - 1;
+                                    FLAG.fromfile = true;
+                                    GETFULLTREE = Some(crate::file::tabedfile_getfulltree);
+                                    break;
+                                }
+                                if argi == "--fromfile" {
+                                    j = argi.len() - 1;
+                                    FLAG.fromfile = true;
+                                    GETFULLTREE = Some(crate::file::file_getfulltree);
+                                    break;
+                                }
+                                if argi == "--metafirst" {
+                                    j = argi.len() - 1;
+                                    FLAG.metafirst = if opt_toggle { !FLAG.metafirst } else { true };
+                                    break;
+                                }
+                                if let Some(a) = long_arg(&args, i, &mut j, &mut n, "--gitfile") {
+                                    FLAG.gitignore = true;
+                                    let new_ig = new_ignorefile(a, a, false);
+                                    match new_ig {
+                                        Some(b) => push_filterstack(Some(b)),
+                                        None => {
+                                            eprintln!("tree: Could not load gitignore file");
+                                            std::process::exit(1);
+                                        }
+                                    }
+                                    break;
+                                }
+                                if argi == "--gitignore" {
+                                    j = argi.len() - 1;
+                                    FLAG.gitignore = if opt_toggle { !FLAG.gitignore } else { true };
+                                    break;
+                                }
+                                if argi == "--info" {
+                                    j = argi.len() - 1;
+                                    FLAG.showinfo = if opt_toggle { !FLAG.showinfo } else { true };
+                                    break;
+                                }
+                                if let Some(a) = long_arg(&args, i, &mut j, &mut n, "--infofile") {
+                                    FLAG.showinfo = true;
+                                    let new_inf = new_infofile(a, false);
+                                    match new_inf {
+                                        Some(b) => push_infostack(Some(b)),
+                                        None => {
+                                            eprintln!("tree: Could not load infofile");
+                                            std::process::exit(1);
+                                        }
+                                    }
+                                    break;
+                                }
+                                if let Some(a) = long_arg(&args, i, &mut j, &mut n, "--hintro") {
+                                    HINTRO = Some(leak_str(a.to_string()));
+                                    break;
+                                }
+                                if let Some(a) = long_arg(&args, i, &mut j, &mut n, "--houtro") {
+                                    HOUTRO = Some(leak_str(a.to_string()));
+                                    break;
+                                }
+                                if argi == "--fflinks" {
+                                    j = argi.len() - 1;
+                                    FLAG.fflinks = if opt_toggle { !FLAG.fflinks } else { true };
+                                    break;
+                                }
+                                if argi == "--hyperlink" {
+                                    j = argi.len() - 1;
+                                    FLAG.hyper = if opt_toggle { !FLAG.hyper } else { true };
+                                    break;
+                                }
+                                if let Some(a) = long_arg(&args, i, &mut j, &mut n, "--scheme") {
+                                    // C: if (strchr(arg, ':') == NULL) { sprintf("%s://", arg); }
+                                    if !a.contains(':') {
+                                        SCHEME = leak_str(format!("{}://", a));
+                                    } else {
+                                        SCHEME = leak_str(a.to_string());
+                                    }
+                                    break;
+                                }
+                                if let Some(a) = long_arg(&args, i, &mut j, &mut n, "--authority") {
+                                    // C: '.' 视为空 authority
+                                    AUTHORITY = if a == "." {
+                                        Some("")
+                                    } else {
+                                        Some(leak_str(a.to_string()))
+                                    };
+                                    break;
+                                }
+                                if argi == "--opt-toggle" {
+                                    j = argi.len() - 1;
+                                    opt_toggle = !opt_toggle;
+                                    break;
+                                }
+                                if argi == "--condense" {
+                                    j = argi.len() - 1;
+                                    FLAG.condense_singletons =
+                                        if opt_toggle { !FLAG.condense_singletons } else { true };
+                                    break;
+                                }
+                                if let Some(a) = long_arg(&args, i, &mut j, &mut n, "--compress") {
+                                    FLAG.compress_indent = a.parse::<i32>().unwrap_or(0);
+                                    FLAG.remove_space = FLAG.compress_indent < 0;
+                                    if FLAG.compress_indent < 0 {
+                                        FLAG.compress_indent = -FLAG.compress_indent;
+                                    }
+                                    if FLAG.compress_indent > 3 {
+                                        FLAG.compress_indent = 0;
+                                        FLAG.noindent = true;
+                                        NL = "";
+                                    }
+                                    if FLAG.compress_indent > 0 {
+                                        FLAG.compress_indent -= 1;
+                                    }
+                                    break;
+                                }
+                                #[cfg(target_os = "linux")]
+                                {
+                                    if argi == "--acl" {
+                                        j = argi.len() - 1;
+                                        FLAG.acl = if opt_toggle { !FLAG.acl } else { true };
+                                        FLAG.p = if FLAG.acl { true } else { FLAG.p };
+                                        break;
+                                    }
+                                    if argi == "--selinux" {
+                                        j = argi.len() - 1;
+                                        FLAG.selinux = if opt_toggle { !FLAG.selinux } else { true };
+                                        break;
+                                    }
+                                }
+                                eprintln!("tree: Invalid argument `{}'.", argi);
+                                usage(1);
+                                std::process::exit(1);
+                            }
+                            // C: 落入 default
+                            eprintln!("tree: Invalid argument -`{}'.", bytes[j] as char);
+                            usage(1);
+                            std::process::exit(1);
+                        }
+                        _ => {
+                            eprintln!("tree: Invalid argument -`{}'.", bytes[j] as char);
+                            usage(1);
+                            std::process::exit(1);
+                        }
+                    }
+                    j += 1;
+                }
+            } else {
+                dirname.push(argi.clone());
+            }
+            i = n;
+        }
+    }
+
+    // C: setoutput(outfilename);
+    setoutput(outfilename.as_deref());
+    crate::color::parse_dir_colors();
+    crate::color::initlinedraw(false);
+
+    if showversion {
+        print_version(true);
+        std::process::exit(0);
+    }
+
+    // unsafe：读写全局 TOPSORT/BASESORT/FLAG 等
+    unsafe {
+        // C: if (dirname == NULL) { dirname[0] = "."; }
+        if dirname.is_empty() {
+            dirname.push(".".to_string());
+        }
+        // C: if (topsort == NULL) topsort = basesort;
+        if TOPSORT.is_none() {
+            TOPSORT = BASESORT;
+        }
+        // C: if (basesort == NULL) topsort = NULL;
+        if BASESORT.is_none() {
+            TOPSORT = None;
+        }
+        // C: if (timefmt) setlocale(LC_TIME, "");
+        #[cfg(unix)]
+        if TIMEFMT.is_some() {
+            let empty = std::ffi::CString::new("").unwrap();
+            // unsafe：调用 C 库函数 setlocale（libc 无安全封装）
+            unsafe {
+                libc::setlocale(libc::LC_TIME, empty.as_ptr());
+            }
+        }
+        // C: if (flag.d) flag.prune = false;（否则什么都得不到）
+        if FLAG.d {
+            FLAG.prune = false;
+        }
+        // C: if (flag.R && (Level == -1)) flag.R = false;
+        if FLAG.R && LEVEL == -1 {
+            FLAG.R = false;
+        }
+
+        // C: if (flag.hyper && authority == NULL) { gethostname(...) }
+        if FLAG.hyper && AUTHORITY.is_none() {
+            #[cfg(unix)]
+            {
+                let mut buf = vec![0u8; PATH_MAX];
+                // unsafe：调用 C 库函数 gethostname（libc 无安全封装）
+                let r = unsafe {
+                    libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, PATH_MAX)
+                };
+                if r < 0 {
+                    eprintln!("Unable to get hostname, using 'localhost'.");
+                    AUTHORITY = Some("localhost");
+                } else {
+                    let name = std::ffi::CStr::from_ptr(buf.as_ptr() as *const libc::c_char)
+                        .to_string_lossy()
+                        .into_owned();
+                    AUTHORITY = Some(leak_str(name));
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                // 非 Unix 平台无 gethostname：用 COMPUTERNAME 或 localhost
+                let name = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "localhost".to_string());
+                AUTHORITY = Some(leak_str(name));
+            }
+        }
+
+        // C: if (flag.showinfo) push_infostack(new_infofile(INFO_PATH, false));
+        if FLAG.showinfo {
+            push_infostack(new_infofile(crate::tree::INFO_PATH, false));
+        }
+
+        // C: needfulltree = flag.du || flag.prune || flag.matchdirs || flag.fromfile || flag.condense_singletons;
+        needfulltree = FLAG.du || FLAG.prune || FLAG.matchdirs || FLAG.fromfile || FLAG.condense_singletons;
+    }
+
+    // C: emit_tree(dirname, needfulltree);
+    crate::list::emit_tree(&mut dirname, needfulltree);
+
+    // C: if (outfilename != NULL) fclose(outfile);
+    // process::exit 不运行析构函数，BufWriter 缓冲需显式 flush（等价于 fclose）
+    if outfilename.is_some() {
+        // unsafe：访问全局 OUTFILE
+        unsafe {
+            if let Some(w) = OUTFILE.as_mut() {
+                let _ = w.flush();
+            }
+        }
+    }
+
+    // C: return errors ? 2 : 0;
+    let code = if unsafe { ERRORS } != 0 { 2 } else { 0 };
+    std::process::exit(code);
+}
+
+

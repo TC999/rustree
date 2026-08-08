@@ -129,7 +129,9 @@ fn search<'a>(dir: &'a mut Option<Box<Info>>, name: &str) -> &'a mut Info {
 
 // === 原 C 函数：void freefiletree(struct _info *ent) ===
 /// 释放整棵文件树（tchild 递归 + next 兄弟链）。
-/// Rust 中 drop 自动递归释放所有字段。
+/// Rust 中 fprune 对过滤掉的子树直接 drop（等价于此函数）；
+/// 函数本身保留以对应 C 的逐函数翻译完整性。
+#[allow(dead_code)]
 fn freefiletree(ent: Option<Box<Info>>) {
     drop(ent);
 }
@@ -579,41 +581,52 @@ pub fn tabedfile_getfulltree(
 mod tests {
     use super::*;
 
+    // file.rs 测试共享 PREV（nextpc 的 C static prev）、FLAG/PATTERN 等全局，
+    // 与 test_file_getfulltree/test_tabedfile_getfulltree 等并行时需串行化
+    fn with_lock<T>(f: impl FnOnce() -> T) -> T {
+        let _g = crate::globals::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        f()
+    }
+
     #[test]
     fn test_nextpc_basic() {
-        // 重置跨调用状态（C 的 static prev）
-        PREV.store(false, Ordering::SeqCst);
-        let mut parser = PathParser {
-            data: b"a/b/c".to_vec(),
-            pos: 0,
-        };
-        let mut tok: i32 = 0;
-        let s = nextpc(&mut parser, &mut tok).unwrap();
-        assert_eq!((s.as_str(), tok), ("a", T_DIR));
-        let s = nextpc(&mut parser, &mut tok);
-        assert_eq!((s, tok), (None, T_PATHSEP));
-        let s = nextpc(&mut parser, &mut tok).unwrap();
-        assert_eq!((s.as_str(), tok), ("b", T_DIR));
-        let s = nextpc(&mut parser, &mut tok);
-        assert_eq!((s, tok), (None, T_PATHSEP));
-        let s = nextpc(&mut parser, &mut tok).unwrap();
-        assert_eq!((s.as_str(), tok), ("c", T_FILE));
+        with_lock(|| {
+            // 重置跨调用状态（C 的 static prev）
+            PREV.store(false, Ordering::SeqCst);
+            let mut parser = PathParser {
+                data: b"a/b/c".to_vec(),
+                pos: 0,
+            };
+            let mut tok: i32 = 0;
+            let s = nextpc(&mut parser, &mut tok).unwrap();
+            assert_eq!((s.as_str(), tok), ("a", T_DIR));
+            let s = nextpc(&mut parser, &mut tok);
+            assert_eq!((s, tok), (None, T_PATHSEP));
+            let s = nextpc(&mut parser, &mut tok).unwrap();
+            assert_eq!((s.as_str(), tok), ("b", T_DIR));
+            let s = nextpc(&mut parser, &mut tok);
+            assert_eq!((s, tok), (None, T_PATHSEP));
+            let s = nextpc(&mut parser, &mut tok).unwrap();
+            assert_eq!((s.as_str(), tok), ("c", T_FILE));
+        })
     }
 
     #[test]
     fn test_nextpc_consecutive_seps() {
-        PREV.store(false, Ordering::SeqCst);
-        let mut parser = PathParser {
-            data: b"a//b".to_vec(),
-            pos: 0,
-        };
-        let mut tok: i32 = 0;
-        assert_eq!((nextpc(&mut parser, &mut tok).unwrap().as_str(), tok), ("a", T_DIR));
-        // prev 置位 → T_PATHSEP
-        assert_eq!((nextpc(&mut parser, &mut tok), tok), (None, T_PATHSEP));
-        // 第二个 '/' → T_PATHSEP
-        assert_eq!((nextpc(&mut parser, &mut tok), tok), (None, T_PATHSEP));
-        assert_eq!((nextpc(&mut parser, &mut tok).unwrap().as_str(), tok), ("b", T_FILE));
+        with_lock(|| {
+            PREV.store(false, Ordering::SeqCst);
+            let mut parser = PathParser {
+                data: b"a//b".to_vec(),
+                pos: 0,
+            };
+            let mut tok: i32 = 0;
+            assert_eq!((nextpc(&mut parser, &mut tok).unwrap().as_str(), tok), ("a", T_DIR));
+            // prev 置位 → T_PATHSEP
+            assert_eq!((nextpc(&mut parser, &mut tok), tok), (None, T_PATHSEP));
+            // 第二个 '/' → T_PATHSEP
+            assert_eq!((nextpc(&mut parser, &mut tok), tok), (None, T_PATHSEP));
+            assert_eq!((nextpc(&mut parser, &mut tok).unwrap().as_str(), tok), ("b", T_FILE));
+        })
     }
 
     #[test]
@@ -640,77 +653,81 @@ mod tests {
 
     #[test]
     fn test_file_getfulltree() {
-        // 构造临时输入文件：a/b/c.txt 与 a/b.txt（-F 链接测试留空）
-        let tmp = std::env::temp_dir().join(format!(
-            "rustree_file_test_{}_{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::write(&tmp, "a/b/c.txt\na/d.txt\n").unwrap();
-        let path = tmp.to_string_lossy().into_owned();
+        with_lock(|| {
+            // 构造临时输入文件：a/b/c.txt 与 a/b.txt（-F 链接测试留空）
+            let tmp = std::env::temp_dir().join(format!(
+                "rustree_file_test_{}_{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::write(&tmp, "a/b/c.txt\na/d.txt\n").unwrap();
+            let path = tmp.to_string_lossy().into_owned();
 
-        // unsafe：测试中初始化全局状态
-        unsafe {
-            FLAG = crate::tree::Flags::new();
-        }
-        let mut size: i64 = 0;
-        let mut err: Option<String> = None;
-        let dir = file_getfulltree(&path, 0, 0, &mut size, &mut err).expect("解析成功");
-        // a 是目录（含子项 b 和 d.txt）
-        let a = &dir[0];
-        assert!(a.isdir);
-        assert_eq!(a.name, "a");
-        let children = a.child.as_ref().expect("a 有子项");
-        // b（目录）和 d.txt（文件）
-        assert_eq!(children.len(), 2);
-        let b = &children[0];
-        assert!(b.isdir);
-        assert_eq!(b.name, "b");
-        assert_eq!(b.child.as_ref().unwrap()[0].name, "c.txt");
-        assert!(!children[1].isdir);
-        assert_eq!(children[1].name, "d.txt");
+            // unsafe：测试中初始化全局状态
+            unsafe {
+                FLAG = crate::tree::Flags::new();
+            }
+            let mut size: i64 = 0;
+            let mut err: Option<String> = None;
+            let dir = file_getfulltree(&path, 0, 0, &mut size, &mut err).expect("解析成功");
+            // a 是目录（含子项 b 和 d.txt）
+            let a = &dir[0];
+            assert!(a.isdir);
+            assert_eq!(a.name, "a");
+            let children = a.child.as_ref().expect("a 有子项");
+            // b（目录）和 d.txt（文件）
+            assert_eq!(children.len(), 2);
+            let b = &children[0];
+            assert!(b.isdir);
+            assert_eq!(b.name, "b");
+            assert_eq!(b.child.as_ref().unwrap()[0].name, "c.txt");
+            assert!(!children[1].isdir);
+            assert_eq!(children[1].name, "d.txt");
 
-        std::fs::remove_file(&tmp).ok();
+            std::fs::remove_file(&tmp).ok();
+        })
     }
 
     #[test]
     fn test_tabedfile_getfulltree() {
-        let tmp = std::env::temp_dir().join(format!(
-            "rustree_tab_test_{}_{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        // 制表符缩进层级
-        std::fs::write(&tmp, "root\n\tchild1\n\tchild2\n\t\tgrand\n").unwrap();
-        let path = tmp.to_string_lossy().into_owned();
+        with_lock(|| {
+            let tmp = std::env::temp_dir().join(format!(
+                "rustree_tab_test_{}_{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            // 制表符缩进层级
+            std::fs::write(&tmp, "root\n\tchild1\n\tchild2\n\t\tgrand\n").unwrap();
+            let path = tmp.to_string_lossy().into_owned();
 
-        // unsafe：测试中初始化全局状态
-        unsafe {
-            FLAG = crate::tree::Flags::new();
-        }
-        let mut size: i64 = 0;
-        let mut err: Option<String> = None;
-        let dir = tabedfile_getfulltree(&path, 0, 0, &mut size, &mut err).expect("解析成功");
-        assert_eq!(dir.len(), 1);
-        let root = &dir[0];
-        assert_eq!(root.name, "root");
-        assert!(root.isdir);
-        let children = root.child.as_ref().unwrap();
-        assert_eq!(children.len(), 2);
-        // child1 无子项 → C 中 isdir=false（tab 缩进只标记父为目录）
-        assert_eq!(children[0].name, "child1");
-        assert!(!children[0].isdir);
-        // child2 有子项 grand → isdir=true
-        assert_eq!(children[1].name, "child2");
-        assert!(children[1].isdir);
-        assert_eq!(children[1].child.as_ref().unwrap()[0].name, "grand");
+            // unsafe：测试中初始化全局状态
+            unsafe {
+                FLAG = crate::tree::Flags::new();
+            }
+            let mut size: i64 = 0;
+            let mut err: Option<String> = None;
+            let dir = tabedfile_getfulltree(&path, 0, 0, &mut size, &mut err).expect("解析成功");
+            assert_eq!(dir.len(), 1);
+            let root = &dir[0];
+            assert_eq!(root.name, "root");
+            assert!(root.isdir);
+            let children = root.child.as_ref().unwrap();
+            assert_eq!(children.len(), 2);
+            // child1 无子项 → C 中 isdir=false（tab 缩进只标记父为目录）
+            assert_eq!(children[0].name, "child1");
+            assert!(!children[0].isdir);
+            // child2 有子项 grand → isdir=true
+            assert_eq!(children[1].name, "child2");
+            assert!(children[1].isdir);
+            assert_eq!(children[1].child.as_ref().unwrap()[0].name, "grand");
 
-        std::fs::remove_file(&tmp).ok();
+            std::fs::remove_file(&tmp).ok();
+        })
     }
 }

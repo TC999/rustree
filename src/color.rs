@@ -17,10 +17,15 @@ use crate::tree::{
  * 注意：原 C 中 '#' 注释掉的 vgacolor/colortable 数组未翻译。
  * --------------------------------------------------------------------- */
 pub const ERROR: i32 = -1;
+#[allow(dead_code)]
 pub const CMD_COLOR: i32 = 0;
+#[allow(dead_code)]
 pub const CMD_OPTIONS: i32 = 1;
+#[allow(dead_code)]
 pub const CMD_TERM: i32 = 2;
+#[allow(dead_code)]
 pub const CMD_EIGHTBIT: i32 = 3;
+#[allow(dead_code)]
 pub const COL_RESET: i32 = 4;
 pub const COL_NORMAL: i32 = 5;
 pub const COL_FILE: i32 = 6;
