@@ -7,9 +7,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 use crate::patmatch;
-use crate::tree::{
-    stat_fields, Ignorefile, Pattern, S_IFDIR, S_IFMT, S_IFREG,
-};
+use crate::sys::stat_fields;
+use crate::tree::{Ignorefile, Pattern, S_IFDIR, S_IFMT, S_IFREG};
 
 // C: struct ignorefile *filterstack = NULL;
 // gitignore 过滤栈（链表，最新压入的在栈顶，filtercheck 从栈顶开始匹配）

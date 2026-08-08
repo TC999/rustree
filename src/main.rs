@@ -13,7 +13,6 @@
 #![allow(static_mut_refs)]
 // Windows 的卷序列号/文件索引（st_dev/st_ino 近似）由 unstable feature
 // 门控；本项目使用 nightly 工具链（见环境检测），故按平台启用。
-#![cfg_attr(target_os = "windows", feature(windows_by_handle))]
 
 mod color;
 mod file;
@@ -25,6 +24,7 @@ mod info;
 mod json;
 mod list;
 mod strverscmp;
+mod sys;
 mod tree;
 mod unix;
 mod util;
@@ -265,8 +265,9 @@ use crate::globals::{
 };
 use crate::hash::saveino;
 use crate::info::{infocheck, new_infofile, push_infostack};
+use crate::sys::{lstat_fields, read_link, stat_fields};
 use crate::tree::{
-    stat_fields, Info, StatFields, MINIT, SIXMONTHS, S_IFDIR, S_IFIFO, S_IFLNK, S_IFMT, S_IFREG,
+    Info, StatFields, MINIT, S_IFDIR, S_IFIFO, S_IFLNK, S_IFMT, S_IFREG,
     S_IFSOCK, S_IRUSR, S_ISGID, S_ISUID, S_ISVTX, S_IXGRP, S_IXOTH, S_IXUSR,
 };
 use crate::util::pathconcat;
@@ -367,66 +368,12 @@ pub fn patignore(name: &str, isdir: bool, checkpaths: bool) -> i32 {
     0
 }
 
-// === 原 C 函数：bool has_acl(const char *path) ===（仅 Linux）
-/// 检测文件是否带有 POSIX ACL（通过 listxattr 检查 "system.posix_acl_access"）。
-#[cfg(target_os = "linux")]
-pub fn has_acl(path: &str) -> bool {
-    // unsafe：调用 C 库函数 listxattr（libc 无安全封装）
-    let c_path = std::ffi::CString::new(path).unwrap_or_default();
-    let mut buf = vec![0u8; PATH_MAX];
-    let n = unsafe {
-        libc::listxattr(
-            c_path.as_ptr(),
-            buf.as_mut_ptr() as *mut libc::c_char,
-            buf.len(),
-        )
-    };
-    // C: ssize_t n = listxattr(path, buf, PATH_MAX); if (n <= 0) return false;
-    if n <= 0 {
-        return false;
-    }
-    // C: for(key=buf, i=0; i < n; i+=len+1) { len = strlen(key); if (!strcmp(key, "system.posix_acl_access")) return true; }
-    let mut i = 0usize;
-    while i < n as usize {
-        let key = std::ffi::CStr::from_ptr(buf.as_ptr().add(i) as *const libc::c_char);
-        let len = key.to_bytes().len();
-        if key.to_bytes() == b"system.posix_acl_access" {
-            return true;
-        }
-        i += len + 1;
-    }
-    false
-}
-
-// === 原 C 函数：char *selinux_context(const char *path) ===（仅 Linux）
-/// 读取文件的 SELinux 安全上下文（getxattr），并驻留到 strhash 表中。
-/// C 中返回驻留字符串指针；Rust 返回克隆的 String（值等价）。
-#[cfg(target_os = "linux")]
-pub fn selinux_context(path: &str) -> String {
-    // unsafe：调用 C 库函数 getxattr（libc 无安全封装）
-    let c_path = std::ffi::CString::new(path).unwrap_or_default();
-    let mut buf = vec![0u8; PATH_MAX];
-    let len = unsafe {
-        libc::getxattr(
-            c_path.as_ptr(),
-            b"security.selinux\0".as_ptr() as *const libc::c_char,
-            buf.as_mut_ptr() as *mut libc::c_void,
-            PATH_MAX - 1,
-        )
-    };
-    // C: xpattern[len < 0 ? 0 : len] = '\0';
-    let valid = if len < 0 { 0 } else { len as usize };
-    buf.truncate(valid);
-    // C: return strhash(xpattern);
-    crate::hash::strhash(&String::from_utf8_lossy(&buf))
-}
-
 // === 原 C 函数：struct _info *getinfo(const char *name, char *path, int infotop) ===
 /// 获取单个目录项的信息（lstat + 按需 stat 跟随），并应用过滤规则；
 /// infotop 非 0 时从 .info 文件提取注释（ent->comment）。
 pub fn getinfo(name: &str, path: &str, infotop: i32) -> Option<Info> {
     // C: if (lstat(path, &lst) < 0) return NULL;
-    let lst = match crate::tree::lstat_fields(path) {
+    let lst = match lstat_fields(path) {
         Ok(s) => s,
         Err(_) => return None,
     };
@@ -500,11 +447,11 @@ pub fn getinfo(name: &str, path: &str, infotop: i32) -> Option<Info> {
     unsafe {
         // C: if (flag.acl) ent->hasacl = has_acl(path);
         if FLAG.acl {
-            ent.hasacl = has_acl(path);
+            ent.hasacl = crate::sys::has_acl(path);
         }
         // C: if (flag.selinux) ent->secontext = selinux_context(path); else ent->secontext = NULL;
         ent.secontext = if FLAG.selinux {
-            Some(selinux_context(path))
+            Some(crate::sys::selinux_context(path))
         } else {
             None
         };
@@ -512,7 +459,7 @@ pub fn getinfo(name: &str, path: &str, infotop: i32) -> Option<Info> {
 
     // C: if ((lst.st_mode & S_IFMT) == S_IFLNK) { readlink 处理 }
     if (lst.mode & S_IFMT) == S_IFLNK {
-        match crate::tree::read_link(path) {
+        match read_link(path) {
             // C: if ((len = readlink(path, lbuf, lbufsize-1)) < 0)
             Err(_) => {
                 ent.lnk = Some("[Error reading symbolic link information]".to_string());
@@ -717,112 +664,6 @@ pub fn prot(m: u32) -> String {
         buf[9] = if buf[9] == b'-' { b'T' } else { b't' };
     }
     String::from_utf8(buf).expect("prot 输出均为 ASCII")
-}
-
-// === 原 C 函数：char *do_date(time_t t) ===
-/// 格式化时间。默认格式按 6 个月窗口选择 "%b %e  %Y"（较远）或 "%b %e %R"（较近）；
-/// 设置 --timefmt 时按自定义格式。
-pub fn do_date(t: i64) -> String {
-    #[cfg(unix)]
-    // unsafe：调用 C 库函数 localtime_r/strftime（libc 无安全封装）
-    unsafe {
-        let mut tm: libc::tm = std::mem::zeroed();
-        let tt: libc::time_t = t as libc::time_t;
-        if libc::localtime_r(&tt, &mut tm).is_null() {
-            return String::new();
-        }
-        // C: if (timefmt) 用 timefmt，否则按时间窗口选默认格式
-        let fmt: &[u8] = if crate::globals::TIMEFMT.is_some() {
-            crate::globals::TIMEFMT.unwrap().as_bytes()
-        } else {
-            // C: time_t c = time(0);
-            let c = libc::time(std::ptr::null_mut());
-            if t > c as i64 || (t + SIXMONTHS) < c as i64 {
-                b"%b %e  %Y"
-            } else {
-                b"%b %e %R"
-            }
-        };
-        let mut buf = vec![0u8; 256];
-        let n = libc::strftime(
-            buf.as_mut_ptr() as *mut libc::c_char,
-            255,
-            fmt.as_ptr() as *const libc::c_char,
-            &tm,
-        );
-        buf.truncate(n);
-        String::from_utf8_lossy(&buf).into_owned()
-    }
-    #[cfg(not(unix))]
-    {
-        // Windows 无 strftime/localtime_r：手写两种默认格式（UTC 近似，注释说明时区差异）。
-        // 自定义 --timefmt 仅支持常见占位符替换。
-        const MONTHS: &[&str] = &[
-            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-        ];
-        // C: time_t c = time(0)
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-        // 简化：按 UTC 计算（C 的 localtime 依赖本地时区，Windows 上注释说明）
-        let days = t.div_euclid(86400);
-        let secs = t.rem_euclid(86400);
-        let (y, m, d) = civil_from_days(days);
-        let hh = secs / 3600;
-        let mm = (secs % 3600) / 60;
-        // unsafe：读取全局 TIMEFMT
-        if let Some(fmt) = unsafe { crate::globals::TIMEFMT } {
-            // 简单 strftime 子集替换：%Y %y %m %d %e %H %M %S %b %B %%
-            let mut out = String::new();
-            let mut chars = fmt.chars().peekable();
-            while let Some(c) = chars.next() {
-                if c != '%' {
-                    out.push(c);
-                    continue;
-                }
-                match chars.next() {
-                    Some('Y') => out.push_str(&format!("{}", y)),
-                    Some('y') => out.push_str(&format!("{:02}", y % 100)),
-                    Some('m') => out.push_str(&format!("{:02}", m)),
-                    Some('d') => out.push_str(&format!("{:02}", d)),
-                    Some('e') => out.push_str(&format!("{:2}", d)),
-                    Some('H') => out.push_str(&format!("{:02}", hh)),
-                    Some('M') => out.push_str(&format!("{:02}", mm)),
-                    Some('S') => out.push_str(&format!("{:02}", secs % 60)),
-                    Some('b') => out.push_str(MONTHS[(m - 1) as usize]),
-                    Some('%') => out.push('%'),
-                    Some(other) => {
-                        out.push('%');
-                        out.push(other);
-                    }
-                    None => out.push('%'),
-                }
-            }
-            return out;
-        }
-        if t > now || (t + SIXMONTHS) < now {
-            format!("{} {:2}  {}", MONTHS[(m - 1) as usize], d, y)
-        } else {
-            format!("{} {:2} {:02}:{:02}", MONTHS[(m - 1) as usize], d, hh, mm)
-        }
-    }
-}
-
-// 天数 → (年, 月, 日)（Howard Hinnant 的 civil_from_days 算法）
-#[cfg(not(unix))]
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719468;
-    let era = z.div_euclid(146097);
-    let doe = z.rem_euclid(146097);
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    let y = if m <= 2 { y + 1 } else { y };
-    (y, m, d)
 }
 
 // === 原 C 函数：void printit(const char *s) ===
@@ -1061,7 +902,7 @@ pub fn fillinfo(buf: &mut String, ent: Option<&Info>) {
         // C: if (flag.D) sprintf(buf+n, " %s", do_date(flag.c? ent->ctime : ent->mtime));
         if FLAG.D {
             let t = if FLAG.c { ent.ctime } else { ent.mtime };
-            buf.push_str(&format!(" {}", do_date(t)));
+            buf.push_str(&format!(" {}", crate::sys::do_date(t)));
         }
         #[cfg(target_os = "linux")]
         // C: if (flag.selinux) sprintf(buf+n, " %s", ent->secontext);
@@ -1634,13 +1475,8 @@ fn main() {
     }
 
     // C: setlocale(LC_CTYPE, ""); setlocale(LC_COLLATE, "");
-    // unsafe：调用 C 库函数 setlocale（libc 无安全封装）
-    #[cfg(unix)]
-    unsafe {
-        let empty = std::ffi::CString::new("").unwrap();
-        libc::setlocale(libc::LC_CTYPE, empty.as_ptr());
-        libc::setlocale(libc::LC_COLLATE, empty.as_ptr());
-    }
+    // 平台抽象：见 sys.rs（Unix 调 libc::setlocale，非 Unix 空实现）
+    crate::sys::set_locale_ctype_collate();
 
     // C: charset = getcharset(); ...（字符集检测已随 --charset/TREE_CHARSET 机制移除，
     // 图形线固定为 UTF-8 或默认，见 color.rs 的 initlinedraw）
@@ -1671,10 +1507,10 @@ fn main() {
     // C: #ifdef __linux__ 的 STDDATA_FD 处理（JSON 自动输出到 stddata fd）
     #[cfg(target_os = "linux")]
     {
-        if let Ok(fd_str) = std::env::var(ENV_STDDATA_FD) {
+        if let Ok(fd_str) = std::env::var(crate::tree::ENV_STDDATA_FD) {
             let mut std_fd = fd_str.parse::<i32>().unwrap_or(0);
             if std_fd <= 0 {
-                std_fd = STDDATA_FILENO;
+                std_fd = crate::tree::STDDATA_FILENO;
             }
             // C: if (fcntl(std_fd, F_GETFD) >= 0)
             // unsafe：调用 C 库函数 fcntl（libc 无安全封装）
@@ -2227,13 +2063,9 @@ fn main() {
             TOPSORT = None;
         }
         // C: if (timefmt) setlocale(LC_TIME, "");
-        #[cfg(unix)]
+        // 平台抽象：见 sys.rs（Unix 调 libc::setlocale，非 Unix 空实现）
         if TIMEFMT.is_some() {
-            let empty = std::ffi::CString::new("").unwrap();
-            // unsafe：调用 C 库函数 setlocale（libc 无安全封装）
-            unsafe {
-                libc::setlocale(libc::LC_TIME, empty.as_ptr());
-            }
+            crate::sys::set_locale_time();
         }
         // C: if (flag.d) flag.prune = false;（否则什么都得不到）
         if FLAG.d {
@@ -2246,28 +2078,14 @@ fn main() {
 
         // C: if (flag.hyper && authority == NULL) { gethostname(...) }
         if FLAG.hyper && AUTHORITY.is_none() {
-            #[cfg(unix)]
-            {
-                let mut buf = vec![0u8; PATH_MAX];
-                // unsafe：调用 C 库函数 gethostname（libc 无安全封装）
-                let r = unsafe {
-                    libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, PATH_MAX)
-                };
-                if r < 0 {
+            // 平台抽象：见 sys.rs（Unix 调 gethostname；非 Unix 用 COMPUTERNAME/localhost）
+            match crate::sys::get_hostname() {
+                None => {
+                    // C: fprintf(stderr, "Unable to get hostname, using 'localhost'.\n");
                     eprintln!("Unable to get hostname, using 'localhost'.");
                     AUTHORITY = Some("localhost");
-                } else {
-                    let name = std::ffi::CStr::from_ptr(buf.as_ptr() as *const libc::c_char)
-                        .to_string_lossy()
-                        .into_owned();
-                    AUTHORITY = Some(leak_str(name));
                 }
-            }
-            #[cfg(not(unix))]
-            {
-                // 非 Unix 平台无 gethostname：用 COMPUTERNAME 或 localhost
-                let name = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "localhost".to_string());
-                AUTHORITY = Some(leak_str(name));
+                Some(name) => AUTHORITY = Some(leak_str(name)),
             }
         }
 
@@ -2298,5 +2116,7 @@ fn main() {
     let code = if unsafe { ERRORS } != 0 { 2 } else { 0 };
     std::process::exit(code);
 }
+
+
 
 

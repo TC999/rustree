@@ -17,7 +17,8 @@ use crate::filter::{gittrim, new_pattern};
 use crate::out;
 use crate::outbytes;
 use crate::patmatch;
-use crate::tree::{stat_fields, Comment, Infofile, Pattern, S_IFMT, S_IFREG};
+use crate::sys::stat_fields;
+use crate::tree::{Comment, Infofile, Pattern, S_IFMT, S_IFREG};
 
 // C: struct infofile *infostack = NULL;
 // .info 文件栈（链表，最新压入的在栈顶）

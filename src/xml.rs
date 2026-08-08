@@ -9,7 +9,8 @@ use crate::hash::{gidtoname, uidtoname};
 use crate::html::html_encode;
 use crate::out;
 use crate::tree::{Info, S_IFMT, S_IRWXG, S_IRWXO, S_IRWXU, S_ISGID, S_ISUID, S_ISVTX, Totals};
-use crate::{do_date, prot};
+use crate::sys::do_date;
+use crate::prot;
 
 // === 原 C 函数：void xml_indent(int maxlevel) ===
 pub fn xml_indent(maxlevel: i32) {

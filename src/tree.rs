@@ -4,7 +4,6 @@
 // 原 C 头文件中的函数原型不在此实现，其实现分布在各自对应模块中，
 // 此处保留为注释块以便对照。
 
-use std::io;
 
 /* =====================================================================
  * 宏常量（对应 tree.h 中的 #define）
@@ -324,102 +323,6 @@ pub struct StatFields {
     pub mtime: i64, // st_mtime
     pub dev: u64, // st_dev
     pub inode: u64, // st_ino
-}
-
-// C: lstat(path, &st) —— 不跟随符号链接
-#[cfg(unix)]
-pub fn lstat_fields(path: &str) -> io::Result<StatFields> {
-    use std::os::unix::fs::MetadataExt;
-    let md = std::fs::symlink_metadata(path)?;
-    Ok(StatFields {
-        mode: md.mode(),
-        uid: md.uid(),
-        gid: md.gid(),
-        size: md.size() as i64,
-        atime: md.atime(),
-        ctime: md.ctime(),
-        mtime: md.mtime(),
-        dev: md.dev(),
-        inode: md.ino(),
-    })
-}
-
-// C: stat(path, &st) —— 跟随符号链接
-#[cfg(unix)]
-pub fn stat_fields(path: &str) -> io::Result<StatFields> {
-    use std::os::unix::fs::MetadataExt;
-    let md = std::fs::metadata(path)?;
-    Ok(StatFields {
-        mode: md.mode(),
-        uid: md.uid(),
-        gid: md.gid(),
-        size: md.size() as i64,
-        atime: md.atime(),
-        ctime: md.ctime(),
-        mtime: md.mtime(),
-        dev: md.dev(),
-        inode: md.ino(),
-    })
-}
-
-// 非 Unix 平台降级实现：Windows 无 lstat/uid/gid 等概念，
-// 仅能提供 mode 的粗略近似与文件大小/修改时间。
-#[cfg(not(unix))]
-fn metadata_to_fields(md: &std::fs::Metadata) -> StatFields {
-    use std::os::windows::fs::MetadataExt;
-    let size = md.file_size() as i64;
-    let mtime = md
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let readonly = md.permissions().readonly();
-    // Windows 的 lstat 语义：目录符号链接的 is_dir() 为 true，需用
-    // FILE_ATTRIBUTE_REPARSE_POINT (0x400) 检测符号链接（近似 S_IFLNK）。
-    let attrs = md.file_attributes();
-    // 粗略近似：符号链接 0777、目录 0755、只读文件 0444、普通文件 0644
-    let mode = if attrs & 0x400 != 0 {
-        0o120777
-    } else if md.is_dir() {
-        0o40755
-    } else if readonly {
-        0o100444
-    } else {
-        0o100644
-    };
-    StatFields {
-        mode,
-        uid: 0,
-        gid: 0,
-        size,
-        atime: mtime,
-        ctime: mtime,
-        mtime,
-        // Windows 上以卷序列号/文件索引近似 st_dev/st_ino
-        //（std::os::windows::fs::MetadataExt，nightly feature windows_by_handle），
-        // 使 saveino/findino 的符号链接循环检测与 -x 正常工作。
-        dev: md.volume_serial_number().unwrap_or(0) as u64,
-        inode: md.file_index().unwrap_or(0),
-    }
-}
-
-#[cfg(not(unix))]
-pub fn lstat_fields(path: &str) -> io::Result<StatFields> {
-    // Windows 上 lstat 与 stat 等价（Windows 符号链接由 metadata 处理）
-    let md = std::fs::symlink_metadata(path)?;
-    Ok(metadata_to_fields(&md))
-}
-
-#[cfg(not(unix))]
-pub fn stat_fields(path: &str) -> io::Result<StatFields> {
-    let md = std::fs::metadata(path)?;
-    Ok(metadata_to_fields(&md))
-}
-
-// C: readlink(path, buf, size) —— 读取符号链接目标
-pub fn read_link(path: &str) -> io::Result<String> {
-    std::fs::read_link(path).map(|p| p.to_string_lossy().into_owned())
 }
 
 /* =====================================================================

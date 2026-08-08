@@ -56,49 +56,6 @@ struct Strtable {
 #[cfg(target_os = "linux")]
 static mut STRTABLE: [Option<Box<Strtable>>; 256] = [const { None }; 256];
 
-// C: getpwuid(uid) —— 从系统用户数据库查询 uid 对应的用户名
-// 理由：std 无法查询系统用户数据库，必须使用 libc。
-#[cfg(unix)]
-fn lookup_uid_name(uid: u32) -> Option<String> {
-    // unsafe：调用 C 库函数 getpwuid（libc 无安全封装），返回静态缓冲区中的 passwd 结构
-    unsafe {
-        let pw = libc::getpwuid(uid);
-        if pw.is_null() {
-            return None;
-        }
-        // C: ent->pw_name
-        let name = std::ffi::CStr::from_ptr((*pw).pw_name);
-        Some(name.to_string_lossy().into_owned())
-    }
-}
-
-#[cfg(not(unix))]
-fn lookup_uid_name(_uid: u32) -> Option<String> {
-    // 非 Unix 平台（如 Windows）无 getpwuid 系统调用，返回 None，
-    // 调用方回退到数字字符串（对应 C 的 snprintf(ubuf,"%d",uid) 分支）
-    None
-}
-
-// C: getgrgid(gid) —— 从系统组数据库查询 gid 对应的组名
-#[cfg(unix)]
-fn lookup_gid_name(gid: u32) -> Option<String> {
-    // unsafe：调用 C 库函数 getgrgid（libc 无安全封装）
-    unsafe {
-        let gr = libc::getgrgid(gid);
-        if gr.is_null() {
-            return None;
-        }
-        // C: ent->gr_name
-        let name = std::ffi::CStr::from_ptr((*gr).gr_name);
-        Some(name.to_string_lossy().into_owned())
-    }
-}
-
-#[cfg(not(unix))]
-fn lookup_gid_name(_gid: u32) -> Option<String> {
-    None
-}
-
 // === 原 C 函数：char *strhash(char *str) ===（仅 Linux）
 /// 将字符串按 DJB2 哈希驻留到全局表中，重复字符串返回同一个值。
 /// C 返回驻留指针，Rust 返回克隆的 String（值等价，且表项在程序结束前不被释放）。
@@ -184,7 +141,7 @@ pub fn uidtoname(uid: u32) -> String {
         // 未找到：进行真实查询并加入表
         // C: if ((ent = getpwuid(uid)) != NULL) t->name = scopy(ent->pw_name);
         //     else { snprintf(ubuf,30,"%d",uid); ubuf[31]=0; t->name = scopy(ubuf); }
-        let name = lookup_uid_name(uid).unwrap_or_else(|| uid.to_string());
+        let name = crate::sys::uid_name(uid).unwrap_or_else(|| uid.to_string());
         let ret = name.clone();
         let t = Box::new(Xtable {
             xid: uid,
@@ -221,7 +178,7 @@ pub fn gidtoname(gid: u32) -> String {
 
         // C: if ((ent = getgrgid(gid)) != NULL) t->name = scopy(ent->gr_name);
         //     else { snprintf(gbuf,30,"%d",gid); gbuf[31]=0; t->name = scopy(gbuf); }
-        let name = lookup_gid_name(gid).unwrap_or_else(|| gid.to_string());
+        let name = crate::sys::gid_name(gid).unwrap_or_else(|| gid.to_string());
         let ret = name.clone();
         let t = Box::new(Xtable {
             xid: gid,
@@ -360,3 +317,4 @@ mod tests {
         assert_ne!(a, b);
     }
 }
+

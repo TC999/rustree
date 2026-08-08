@@ -7,7 +7,8 @@ use crate::filter::{flush_filterstack, pop_filterstack};
 use crate::globals::{DIRS, ERRORS, FLAG, GETFULLTREE, LC, LEVEL, OUTFILE, TOPSORT};
 use crate::hash::{findino, saveino};
 use crate::info::pop_infostack;
-use crate::tree::{lstat_fields, Ignorefile, Info, Infofile, ListingCalls, Totals};
+use crate::sys::lstat_fields;
+use crate::tree::{Ignorefile, Info, Infofile, ListingCalls, Totals};
 use crate::{push_files, read_dir, setoutput, stat2info};
 
 // C: 获取当前输出回调集合（对应 extern struct listingcalls lc）
