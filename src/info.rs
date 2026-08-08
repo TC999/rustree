@@ -72,7 +72,12 @@ pub fn new_infofile(path: &str, checkparents: bool) -> Option<Box<Infofile>> {
             // C: strcpy(rpath, path);
             let mut rpath = path.to_string();
             // C: while ((fp == NULL) && (strcmp(rpath, "/") != 0))
-            while fp.is_none() && rpath != "/" {
+            // Windows 上 canonicalize 返回 verbatim 路径（如 "\\?\C:\"），
+            // 根判断统一用 parent().is_none()（Unix 的 "/" 与 Windows 盘符根均满足）
+            while fp.is_none() {
+                if std::path::Path::new(&rpath).parent().is_none() {
+                    break;
+                }
                 // C: snprintf(buf, "%.*s/..", PATH_MAX-4, rpath);
                 let buf = format!("{}/..", rpath);
                 // C: if (realpath(buf, rpath) == NULL) break;

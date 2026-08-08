@@ -144,7 +144,10 @@ pub fn gitignore_search(startpath: &str, depth: i32) -> Option<Box<Ignorefile>> 
             Ok(rp) => {
                 let rp = rp.to_string_lossy();
                 // C: if (strcmp(path, "/") != 0 && depth < 2048) —— 未到根则继续向上
-                if rp != "/" && depth < 2048 {
+                // Windows 上 canonicalize 返回 verbatim 路径（如 "\\?\C:\"），
+                // 根判断统一用 parent().is_none()（Unix 的 "/" 与 Windows 盘符根均满足）
+                let is_root = std::path::Path::new(&*rp).parent().is_none();
+                if !is_root && depth < 2048 {
                     // C: snprintf(path, "%.*s/..", PATH_MAX-4, startpath);
                     path = format!("{}/..", startpath);
                     pign = gitignore_search(&path, depth + 1);
