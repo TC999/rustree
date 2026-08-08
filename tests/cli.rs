@@ -5,6 +5,10 @@
 
 use std::path::Path;
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+// 并行测试的目录名序号：与 pid+纳秒组合，消除同名临时目录碰撞
+static FIXTURE_SEQ: AtomicU64 = AtomicU64::new(0);
 
 fn run_in(args: &[&str], cwd: &Path) -> String {
     let out = Command::new(env!("CARGO_BIN_EXE_tree"))
@@ -22,9 +26,11 @@ fn run_in(args: &[&str], cwd: &Path) -> String {
 
 /// 构造独立的临时目录树并返回路径（测试结束由调用者清理）。
 fn make_fixture() -> std::path::PathBuf {
+    let seq = FIXTURE_SEQ.fetch_add(1, Ordering::Relaxed);
     let tmp = std::env::temp_dir().join(format!(
-        "rustree_cli_test_{}_{}",
+        "rustree_cli_test_{}_{}_{}",
         std::process::id(),
+        seq,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -42,8 +48,8 @@ fn test_basic_output() {
     let tmp = make_fixture();
     let out = run_in(&[], &tmp);
     // 默认按名称排序：a.txt 在前，sub 在后
-    assert!(out.contains("|-- a.txt"), "缺少 a.txt：\n{}", out);
-    assert!(out.contains("`-- sub"), "缺少 sub：\n{}", out);
+    assert!(out.contains("├── a.txt"), "缺少 a.txt：\n{}", out);
+    assert!(out.contains("└── sub"), "缺少 sub：\n{}", out);
     assert!(out.contains("3 directories, 3 files"), "统计错误：\n{}", out);
     std::fs::remove_dir_all(&tmp).ok();
 }

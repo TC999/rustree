@@ -457,8 +457,9 @@ pub fn color(mode: u32, name: &str, orphan: bool, islink: bool) -> bool {
 const UTF8: &[&str] = &["UTF-8", "utf8"];
 
 // C: static const struct linedraw cstable[] = { ... };
-// 最后一项 { NULL, "(c)", ... } 为哨兵：name 为空切片表示表结束。
-pub const CSTABLE: [Linedraw; 2] = [
+// 按需求仅保留 UTF-8 图形线（cstable[0]）；原 C 的默认 ASCII 哨兵项
+// （{ NULL, "(c)", ... }，`|--` 风格）已删除，输出恒为 UTF-8 图形线。
+pub const CSTABLE: [Linedraw; 1] = [
     // UTF-8
     Linedraw {
         name: UTF8,
@@ -484,19 +485,6 @@ pub const CSTABLE: [Linedraw; 2] = [
         cext: b" \xE2\x8E\xAA",
         csingle: b" {",
     },
-    // 哨兵项（C: { NULL, "(c)", ... }）—— name 为空切片表示表结束
-    Linedraw {
-        name: &[],
-        copy: b"(c)",
-        vert: [b"|  ", b"| ", b"|"],
-        vert_left: [b"|--", b"|-", b"+"],
-        corner: [b"`--", b"`-", b"`"],
-        ctop: b" [",
-        cbot: b" [",
-        cmid: b" [",
-        cext: b" [",
-        csingle: b" [",
-    },
 ];
 
 // === 原 C 函数：void initlinedraw(bool help) ===
@@ -515,18 +503,16 @@ pub fn initlinedraw(help: bool) {
         return;
     }
 
-    // unsafe：读写全局 LINEDRAW 与 FLAG/CHARSET
+    // unsafe：读写全局 LINEDRAW 与 FLAG
     unsafe {
-        // 如果需要 ANSI 线条，假设用户用的是 vt100：
+        // 如果需要图形线（-A，原 ANSI 线条语义），直接取 UTF-8 表：
         // C: if (flag.ansilines) { linedraw = cstable; return; }
         if FLAG.ansilines {
             LINEDRAW = &CSTABLE[0];
             return;
         }
-        // C: if (charset) { 遍历表，strcasecmp 匹配字符集名 }
-        // 字符集机制已移除：不再按 CHARSET 匹配，固定回退默认项
-        // C: linedraw = cstable + sizeof cstable/sizeof*cstable - 1;（默认最后一项）
-        LINEDRAW = CSTABLE.last().unwrap();
+        // 仅保留 UTF-8 一种图形线（ASCII 默认项已删除）：恒取 cstable[0]
+        LINEDRAW = &CSTABLE[0];
     }
 }
 
@@ -555,13 +541,13 @@ mod tests {
 
     #[test]
     fn test_cstable_utf8_table() {
-        // UTF-8 表（裁剪后为第 0 项）使用标准 Unicode 线条字符
+        // 仅保留 UTF-8 表（第 0 项）使用标准 Unicode 线条字符
         let utf8_ld = &CSTABLE[0];
         assert_eq!(utf8_ld.name, &["UTF-8", "utf8"]);
         // 竖线 "│"
         assert_eq!(utf8_ld.vert[0], "│\u{A0}\u{A0}".as_bytes());
-        // 最后一项是哨兵（空 name）
-        assert!(CSTABLE.last().unwrap().name.is_empty());
+        // 只此一项（ASCII 哨兵已删除）
+        assert_eq!(CSTABLE.len(), 1);
     }
 
     #[test]
