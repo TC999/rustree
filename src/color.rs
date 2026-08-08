@@ -492,7 +492,7 @@ pub const CSTABLE: [Linedraw; 1] = [
 pub fn initlinedraw(help: bool) {
     if help {
         // C: fprintf(stderr, "Valid charsets include:\n");
-        eprintln!("Valid charsets include:");
+        eprintln!("{}", crate::tr!("valid-charsets"));
         // C: for(linedraw=cstable; linedraw->name; ++linedraw)
         //       for(s=linedraw->name; *s; ++s) fprintf(stderr, "  %s\n", *s);
         for ld in CSTABLE.iter() {

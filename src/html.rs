@@ -92,8 +92,8 @@ pub fn html_intro() {
 <html>\n\
 <head>\n\
  <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">\n\
- <meta name=\"Author\" content=\"Made by 'tree'\">\n\
- <meta name=\"GENERATOR\" content=\"", );
+ <meta name=\"Author\" content=\"{}\">\n\
+ <meta name=\"GENERATOR\" content=\"", crate::tr!("html-author"));
             print_version(false);
             out!("\">\n\
  <title>{}</title>\n\
@@ -270,27 +270,34 @@ pub fn html_report(tot: Totals) {
     // unsafe：读取全局 FLAG
     unsafe {
         // C: if (flag.du) { psize(buf, tot.size); fprintf("%s%s used in ", ...); }
+        //     本地化：按 du/-d 组合选择 4 种报告消息变体（同 unix_report）
+        let mut size_part = String::new();
         if FLAG.du {
-            let mut buf = String::new();
-            psize(&mut buf, tot.size);
-            out!("{}{} used in ", buf, if FLAG.h || FLAG.si { "" } else { " bytes" });
+            psize(&mut size_part, tot.size);
         }
-        // C: if (flag.d) "%ld director%s" else "%ld director%s, %ld file%s"
-        if FLAG.d {
-            out!(
-                "{} director{}\n",
-                tot.dirs,
-                if tot.dirs == 1 { "y" } else { "ies" }
-            );
+        let unit = if FLAG.h || FLAG.si {
+            String::new()
         } else {
-            out!(
-                "{} director{}, {} file{}\n",
-                tot.dirs,
-                if tot.dirs == 1 { "y" } else { "ies" },
-                tot.files,
-                if tot.files == 1 { "" } else { "s" }
-            );
-        }
+            crate::tr!("report-unit")
+        };
+        let report = if FLAG.d {
+            if FLAG.du {
+                crate::tr!("report-dirs-du", "size" => size_part, "unit" => unit, "dirs" => tot.dirs)
+            } else {
+                crate::tr!("report-dirs", "dirs" => tot.dirs)
+            }
+        } else if FLAG.du {
+            crate::tr!(
+                "report-full-du",
+                "size" => size_part,
+                "unit" => unit,
+                "dirs" => tot.dirs,
+                "files" => tot.files
+            )
+        } else {
+            crate::tr!("report-full", "dirs" => tot.dirs, "files" => tot.files)
+        };
+        out!("{}\n", report);
     }
     out!("\n</p>\n");
 }
@@ -358,6 +365,8 @@ mod tests {
 
     #[test]
     fn test_html_report_text() {
+        let _guard = crate::i18n::TEST_SERIAL.lock().unwrap();
+        crate::i18n::init_with_lang("en");
         with_output(|buf| {
             html_report(Totals {
                 files: 3,

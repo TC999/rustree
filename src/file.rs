@@ -341,7 +341,7 @@ pub fn file_getfulltree(
     let mut reader = match fp {
         Some(r) => r,
         None => {
-            eprintln!("tree: Error opening {} for reading.", d);
+            eprintln!("{}", crate::tr!("error-opening-file", "path" => d));
             return None;
         }
     };
@@ -462,7 +462,7 @@ pub fn tabedfile_getfulltree(
     let mut reader = match fp {
         Some(r) => r,
         None => {
-            eprintln!("tree: Error opening {} for reading.", d);
+            eprintln!("{}", crate::tr!("error-opening-file", "path" => d));
             return None;
         }
     };

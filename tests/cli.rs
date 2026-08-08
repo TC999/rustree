@@ -13,6 +13,10 @@ static FIXTURE_SEQ: AtomicU64 = AtomicU64::new(0);
 fn run_in(args: &[&str], cwd: &Path) -> String {
     let out = Command::new(env!("CARGO_BIN_EXE_tree"))
         .args(args)
+        // 移除 locale 环境变量：测试断言固定英文输出（i18n 检测到中文 locale 会输出中文）
+        .env_remove("LANG")
+        .env_remove("LC_ALL")
+        .env_remove("LC_MESSAGES")
         .current_dir(cwd)
         .output()
         .expect("运行 tree 二进制失败");
@@ -128,6 +132,10 @@ fn test_output_to_file() {
 fn test_invalid_option() {
     let out = Command::new(env!("CARGO_BIN_EXE_tree"))
         .arg("-Z")
+        // 移除 locale：断言固定英文错误消息
+        .env_remove("LANG")
+        .env_remove("LC_ALL")
+        .env_remove("LC_MESSAGES")
         .output()
         .expect("运行 tree 失败");
     assert!(!out.status.success(), "-Z 应返回非 0 退出码");

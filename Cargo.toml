@@ -12,7 +12,10 @@ edition = "2021"
 #     5. strftime()/localtime_r() —— do_date() 的日期格式化（tree.c）
 #   libc 是事实上的标准 FFI 绑定 crate，非第三方功能库。
 [dependencies]
+fluent-bundle = "0.15"
+fluent-langneg = "0.13"
 libc = "0.2"
+unic-langid = "0.9"
 
 [[bin]]
 name = "tree"

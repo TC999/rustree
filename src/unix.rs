@@ -216,27 +216,34 @@ pub fn unix_report(tot: Totals) {
         // C: fputc('\n', outfile);
         outc!(b'\n');
         // C: if (flag.du) { psize(buf, tot.size); fprintf("%s%s used in ", ...); }
+        //     本地化：按 du/-d 组合选择 4 种报告消息变体
+        let mut size_part = String::new();
         if FLAG.du {
-            let mut buf = String::new();
-            psize(&mut buf, tot.size);
-            out!("{}{} used in ", buf, if FLAG.h || FLAG.si { "" } else { " bytes" });
+            psize(&mut size_part, tot.size);
         }
-        // C: if (flag.d) "%ld director%s\n" else "%ld director%s, %ld file%s\n"
-        if FLAG.d {
-            out!(
-                "{} director{}\n",
-                tot.dirs,
-                if tot.dirs == 1 { "y" } else { "ies" }
-            );
+        let unit = if FLAG.h || FLAG.si {
+            String::new()
         } else {
-            out!(
-                "{} director{}, {} file{}\n",
-                tot.dirs,
-                if tot.dirs == 1 { "y" } else { "ies" },
-                tot.files,
-                if tot.files == 1 { "" } else { "s" }
-            );
-        }
+            crate::tr!("report-unit")
+        };
+        let report = if FLAG.d {
+            if FLAG.du {
+                crate::tr!("report-dirs-du", "size" => size_part, "unit" => unit, "dirs" => tot.dirs)
+            } else {
+                crate::tr!("report-dirs", "dirs" => tot.dirs)
+            }
+        } else if FLAG.du {
+            crate::tr!(
+                "report-full-du",
+                "size" => size_part,
+                "unit" => unit,
+                "dirs" => tot.dirs,
+                "files" => tot.files
+            )
+        } else {
+            crate::tr!("report-full", "dirs" => tot.dirs, "files" => tot.files)
+        };
+        out!("{}\n", report);
     }
 }
 
@@ -301,6 +308,8 @@ mod tests {
 
     #[test]
     fn test_unix_report() {
+        let _guard = crate::i18n::TEST_SERIAL.lock().unwrap();
+        crate::i18n::init_with_lang("en");
         with_output(|buf| {
             unix_report(Totals {
                 files: 3,
@@ -314,6 +323,8 @@ mod tests {
 
     #[test]
     fn test_unix_report_du() {
+        let _guard = crate::i18n::TEST_SERIAL.lock().unwrap();
+        crate::i18n::init_with_lang("en");
         with_output(|buf| {
             // unsafe：读取全局 FLAG
             unsafe {

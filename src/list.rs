@@ -140,7 +140,7 @@ pub fn emit_tree(dirname: &mut [String], needfulltree: bool) {
         unsafe {
             // C: if (!dir && n) —— 打开失败
             if dir.is_none() && n != 0 {
-                (lc().error)("error opening dir");
+                (lc().error)(&crate::tr!("error-opening-dir"));
                 (lc().newline)(info.as_ref(), 0, 0, i + 1 < dirname.len());
                 if info.is_none() {
                     ERRORS += 1;
@@ -149,7 +149,7 @@ pub fn emit_tree(dirname: &mut [String], needfulltree: bool) {
                 }
             } else if FLAG.flimit > 0 && n > FLAG.flimit as i64 {
                 // C: sprintf(errbuf, "%ld entries exceeds filelimit, not opening dir", n);
-                (lc().error)(&format!("{} entries exceeds filelimit, not opening dir", n));
+                (lc().error)(&crate::tr!("filelimit-exceeded", "n" => n));
                 (lc().newline)(info.as_ref(), 0, 0, i + 1 < dirname.len());
                 subtotal.dirs += 1;
             } else {
@@ -285,7 +285,7 @@ pub fn listdir(dirname: &str, mut dir: Vec<Info>, lev: i32, dev: u64, hasfulltre
                     if unsafe { LEVEL } >= 0 && lev as i64 > unsafe { LEVEL } {
                         // err 保持 NULL
                     } else {
-                        err = Some("recursive, not followed".to_string());
+                        err = Some(crate::tr!("recursive-not-followed"));
                     }
                     descend = -1;
                 }
@@ -337,15 +337,12 @@ pub fn listdir(dirname: &str, mut dir: Vec<Info>, lev: i32, dev: u64, hasfulltre
                         subdir = read_dir(&newpath, &mut n, if inf.is_some() { 1 } else { 0 });
                         // C: if (!subdir && n) { err = "error opening dir"; errors++; }
                         if subdir.is_none() && n != 0 {
-                            err = Some("error opening dir".to_string());
+                            err = Some(crate::tr!("error-opening-dir"));
                             unsafe { ERRORS += 1; }
                         }
                         // C: if (flag.flimit > 0 && n > flag.flimit) { ... errors++; free_dir(subdir); subdir = NULL; }
                         if unsafe { FLAG.flimit } > 0 && n > unsafe { FLAG.flimit } as i64 {
-                            err = Some(format!(
-                                "{} entries exceeds filelimit, not opening dir",
-                                n
-                            ));
+                            err = Some(crate::tr!("filelimit-exceeded", "n" => n));
                             unsafe { ERRORS += 1; }
                             subdir = None;
                         }
