@@ -21,6 +21,7 @@ mod info;
 mod list;
 mod strverscmp;
 mod tree;
+mod unix;
 mod util;
 
 // =====================================================================
