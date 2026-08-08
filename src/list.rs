@@ -457,6 +457,8 @@ mod tests {
         0
     }
     fn test_newline(_f: Option<&Info>, _l: i32, _p: i32, _c: bool) {}
+    // close 回调的测试替身（当前测试未直接引用，保留以对应 ListingCalls 完整签名）
+    #[allow(dead_code)]
     fn test_close(_f: Option<&Info>, _l: i32, _c: bool) {}
 
     // 初始化全局状态（FLAG 默认、DIRS、LC、输出流）

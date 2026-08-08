@@ -1300,7 +1300,7 @@ pub fn usage(n: i32) {
         &mut stdout_out
     };
     crate::color::fancy(out,
-        "usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n\
+        "usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n\
 \t[\x08-T\r \x0ctitle\r] [\x08-o\r \x0cfilename\r] [\x08-P\r \x0cpattern\r] [\x08-I\r \x0cpattern\r] [\x08--gitignore\r]\n\
 \t[\x08--gitfile\r[\x08=\r]\x0cfile\r] [\x08--matchdirs\r] [\x08--metafirst\r] [\x08--ignore-case\r]\n\
 \t[\x08--nolinks\r] [\x08--hintro\r[\x08=\r]\x0cfile\r] [\x08--houtro\r[\x08=\r]\x0cfile\r] [\x08--inodes\r] [\x08--device\r]\n\
@@ -1367,8 +1367,7 @@ pub fn usage(n: i32) {
   \x08--sort\r \x0cX\r      Select sort: \x08\x0cname\r,\x08\x0cversion\r,\x08\x0csize\r,\x08\x0cmtime\r,\x08\x0cctime\r,\x08\x0cnone\r.\n\
   \x08------- Graphics options -------\r\n\
   \x08-i\r            Don't print indentation lines.\n\
-  \x08-A\r            Print ANSI lines graphic indentation lines.\n\
-  \x08-S\r            Print with CP437 (console) graphics indentation lines.\n\
+  \x08-A\r            Print UTF-8 graphic indentation lines.\n\
   \x08-n\r            Turn colorization off always (\x08-C\r overrides).\n\
   \x08-C\r            Turn colorization on always.\n\
   \x08--compress\r \x0c#\r  Compress indentation lines.\n\
@@ -1831,9 +1830,7 @@ fn main() {
                         b'A' => {
                             FLAG.ansilines = if opt_toggle { !FLAG.ansilines } else { true };
                         }
-                        b'S' => {
-                            CHARSET = Some("IBM437");
-                        }
+                        // -S（CP437 控制台图形）已删除：字符集仅保留 UTF-8 与默认
                         b'D' => {
                             FLAG.D = if opt_toggle { !FLAG.D } else { true };
                         }
