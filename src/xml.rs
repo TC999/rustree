@@ -4,7 +4,7 @@
 // 注意：xml_printinfo 会设置 file->tag（对应 C 中 file->tag = ftype[t]），
 // 供 xml_close 输出闭合标签使用；因此 printinfo 回调的 file 参数为 &mut。
 
-use crate::globals::{CHARSET, FLAG, FTYPE, IFMT, NL};
+use crate::globals::{FLAG, FTYPE, IFMT, NL};
 use crate::hash::{gidtoname, uidtoname};
 use crate::html::html_encode;
 use crate::out;
@@ -72,14 +72,13 @@ fn xml_fillinfo(ent: &Info) {
 
 // === 原 C 函数：void xml_intro(void) ===
 pub fn xml_intro() {
-    // unsafe：读取全局 CHARSET/NL
+    // unsafe：读取全局 NL
     unsafe {
         // C: fprintf(outfile, "<?xml version=\"1.0\"");
         out!("<?xml version=\"1.0\"");
         // C: if (charset) fprintf(" encoding=\"%s\"", charset);
-        if let Some(cs) = CHARSET {
-            out!(" encoding=\"{}\"", cs);
-        }
+        // 字符集机制已移除：固定声明 UTF-8
+        out!(" encoding=\"UTF-8\"");
         // C: fprintf(outfile, "?>%s<tree>%s", _nl, _nl);
         out!("?>{}<tree>{}", NL, NL);
     }
@@ -269,7 +268,7 @@ mod tests {
             xml_intro();
             xml_outtro();
             let out = String::from_utf8(buf.lock().unwrap_or_else(|e| e.into_inner()).clone()).unwrap();
-            assert!(out.starts_with("<?xml version=\"1.0\"?>"));
+            assert!(out.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
             assert!(out.contains("<tree>"));
             assert!(out.contains("</tree>"));
         });

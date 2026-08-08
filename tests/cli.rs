@@ -40,7 +40,7 @@ fn make_fixture() -> std::path::PathBuf {
 #[test]
 fn test_basic_output() {
     let tmp = make_fixture();
-    let out = run_in(&["--charset=ascii"], &tmp);
+    let out = run_in(&[], &tmp);
     // 默认按名称排序：a.txt 在前，sub 在后
     assert!(out.contains("|-- a.txt"), "缺少 a.txt：\n{}", out);
     assert!(out.contains("`-- sub"), "缺少 sub：\n{}", out);
@@ -52,7 +52,7 @@ fn test_basic_output() {
 fn test_depth_limit() {
     let tmp = make_fixture();
     // -L 1 只显示顶层
-    let out = run_in(&["-L", "1", "--charset=ascii"], &tmp);
+    let out = run_in(&["-L", "1"], &tmp);
     assert!(!out.contains("deep"), "-L 1 不应显示深层：\n{}", out);
     assert!(out.contains("2 directories, 1 file"), "统计错误：\n{}", out);
     std::fs::remove_dir_all(&tmp).ok();
@@ -61,7 +61,7 @@ fn test_depth_limit() {
 #[test]
 fn test_dir_only() {
     let tmp = make_fixture();
-    let out = run_in(&["-d", "--charset=ascii"], &tmp);
+    let out = run_in(&["-d"], &tmp);
     assert!(!out.contains("a.txt"), "-d 不应显示文件：\n{}", out);
     assert!(out.contains("3 directories"), "目录统计错误：\n{}", out);
     std::fs::remove_dir_all(&tmp).ok();
@@ -72,7 +72,7 @@ fn test_gitignore_filter() {
     let tmp = make_fixture();
     // 忽略 sub 目录
     std::fs::write(tmp.join(".gitignore"), "sub\n").unwrap();
-    let out = run_in(&["--gitignore", "--charset=ascii"], &tmp);
+    let out = run_in(&["--gitignore"], &tmp);
     assert!(!out.contains("sub"), "gitignore 应过滤 sub：\n{}", out);
     assert!(out.contains("a.txt"), "应保留 a.txt：\n{}", out);
     assert!(out.contains("1 directory, 1 file"), "统计错误：\n{}", out);
@@ -88,7 +88,7 @@ fn test_version_flag() {
 #[test]
 fn test_xml_output() {
     let tmp = make_fixture();
-    let out = run_in(&["-X", "--charset=ascii"], &tmp);
+    let out = run_in(&["-X"], &tmp);
     assert!(out.contains("<?xml version=\"1.0\""), "XML 头缺失：\n{}", out);
     assert!(out.contains("<tree>"), "XML 根缺失：\n{}", out);
     assert!(out.contains("<file name=\"a.txt\""), "XML 文件缺失：\n{}", out);
@@ -99,7 +99,7 @@ fn test_xml_output() {
 #[test]
 fn test_json_output() {
     let tmp = make_fixture();
-    let out = run_in(&["-J", "--charset=ascii"], &tmp);
+    let out = run_in(&["-J"], &tmp);
     assert!(out.contains("\"type\":\"file\",\"name\":\"a.txt\""), "JSON 文件缺失：\n{}", out);
     assert!(out.contains("\"type\":\"report\""), "JSON 报告缺失：\n{}", out);
     std::fs::remove_dir_all(&tmp).ok();
@@ -110,7 +110,7 @@ fn test_output_to_file() {
     let tmp = make_fixture();
     let outfile = tmp.join("out.txt");
     // -o 输出到文件（验证 process::exit 前的显式 flush）
-    let _ = run_in(&["-o", "out.txt", "--charset=ascii"], &tmp);
+    let _ = run_in(&["-o", "out.txt"], &tmp);
     let content = std::fs::read_to_string(&outfile).expect("输出文件应存在");
     assert!(content.contains("a.txt"), "-o 输出内容错误：\n{}", content);
     // 输出文件本身也会被遍历（与 C 一致）：3 目录（. sub deep）+ 4 文件（a out b c）
@@ -128,3 +128,4 @@ fn test_invalid_option() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("Invalid argument"), "错误信息缺失：{}", err);
 }
+

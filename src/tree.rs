@@ -430,8 +430,8 @@ pub fn read_link(path: &str) -> io::Result<String> {
  * bool color(mode_t mode, const char *name, bool orphan, bool islink);
  * void endcolor(void);
  * void fancy(FILE *out, char *s);
- * const char *getcharset(void);
  * void initlinedraw(bool help);
+ *（const char *getcharset(void) 已随 --charset/TREE_CHARSET 机制移除）
  *
  * /* file.c */
  * struct _info **file_getfulltree(char *d, u_long lev, dev_t dev, off_t *size, char **err);

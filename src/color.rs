@@ -439,15 +439,8 @@ pub fn color(mode: u32, name: &str, orphan: bool, islink: bool) -> bool {
 }
 
 // === 原 C 函数：const char *getcharset(void) ===
-/// 返回 TREE_CHARSET 环境变量指定的字符集；未设置返回 None。
-/// C 中非 __EMX__ 分支仅返回该环境变量（复制到静态缓冲区）。
-pub fn getcharset() -> Option<&'static str> {
-    // C: cs = getenv("TREE_CHARSET"); if (cs) return strncpy(buffer, cs, 255);
-    match std::env::var("TREE_CHARSET") {
-        Ok(cs) => Some(leak_str(cs)),
-        Err(_) => None,
-    }
-}
+// 已随 --charset/TREE_CHARSET 机制移除：图形线仅支持 UTF-8 与默认两种，
+// 无需运行时字符集检测（见 CSTABLE/initlinedraw）。
 
 /* ---------------------------------------------------------------------
  * 线条绘制表（C: initlinedraw 中的 cstable）。
@@ -531,17 +524,7 @@ pub fn initlinedraw(help: bool) {
             return;
         }
         // C: if (charset) { 遍历表，strcasecmp 匹配字符集名 }
-        if let Some(cs) = crate::globals::CHARSET {
-            for ld in CSTABLE.iter() {
-                for name in ld.name.iter() {
-                    // C: if(!strcasecmp(charset, *s)) return;
-                    if cs.eq_ignore_ascii_case(name) {
-                        LINEDRAW = ld;
-                        return;
-                    }
-                }
-            }
-        }
+        // 字符集机制已移除：不再按 CHARSET 匹配，固定回退默认项
         // C: linedraw = cstable + sizeof cstable/sizeof*cstable - 1;（默认最后一项）
         LINEDRAW = CSTABLE.last().unwrap();
     }

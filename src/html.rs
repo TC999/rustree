@@ -4,7 +4,7 @@
 
 use std::io::Read;
 
-use crate::globals::{FLAG, HINTRO, HOST, HOUTRO, HTMLDIRLEN, HVERSION, CHARSET, SP, TITLE};
+use crate::globals::{FLAG, HINTRO, HOST, HOUTRO, HTMLDIRLEN, HVERSION, SP, TITLE};
 use crate::out;
 use crate::outbytes;
 use crate::outc;
@@ -82,7 +82,7 @@ fn fcat(filename: &str) {
 
 // === 原 C 函数：void html_intro(void) ===
 pub fn html_intro() {
-    // unsafe：读取全局 HINTRO/CHARSET/TITLE
+    // unsafe：读取全局 HINTRO/TITLE
     unsafe {
         if let Some(hi) = HINTRO {
             // C: if (Hintro) fcat(Hintro);
@@ -91,9 +91,9 @@ pub fn html_intro() {
             out!("<!DOCTYPE html>\n\
 <html>\n\
 <head>\n\
- <meta http-equiv=\"Content-Type\" content=\"text/html; charset={}\">\n\
+ <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">\n\
  <meta name=\"Author\" content=\"Made by 'tree'\">\n\
- <meta name=\"GENERATOR\" content=\"", CHARSET.unwrap_or("iso-8859-1"));
+ <meta name=\"GENERATOR\" content=\"", );
             print_version(false);
             out!("\">\n\
  <title>{}</title>\n\

@@ -153,8 +153,8 @@ pub static mut FILE_PATHSEP: &str = "/";
 // C: char *timefmt = NULL;（--timefmt 自定义时间格式）
 pub static mut TIMEFMT: Option<&'static str> = None;
 
-// C: const char *charset = NULL;（字符集，由 getcharset() 决定）
-pub static mut CHARSET: Option<&'static str> = None;
+// C: const char *charset = NULL;（字符集全局已随 --charset/TREE_CHARSET 机制移除；
+// 图形线固定为 UTF-8 或默认，见 color.rs 的 CSTABLE/initlinedraw）
 
 /* =====================================================================
  * tree.c / 函数指针全局

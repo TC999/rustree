@@ -1100,7 +1100,7 @@ pub fn print_version(nl: bool) {
 
 use crate::filter::pop_filterstack;
 use crate::globals::{
-    AUTHORITY, BASESORT, CHARSET, ERRORS, HINTRO, HOST, HOUTRO, LC, LEVEL, MAXDIRS, MAXIPATTERN,
+    AUTHORITY, BASESORT, ERRORS, HINTRO, HOST, HOUTRO, LC, LEVEL, MAXDIRS, MAXIPATTERN,
     MAXPATTERN, MB_CUR_MAX, NL, SCHEME, SP, TIMEFMT, TITLE, TOPSORT,
 };
 use crate::hash::findino;
@@ -1261,9 +1261,6 @@ fn long_arg<'a>(args: &'a [String], i: usize, j: &mut usize, n: &mut usize, pref
             } else {
                 // C: fprintf(stderr, "tree: Missing argument to %s=\n", prefix);
                 eprintln!("tree: Missing argument to {}=", prefix);
-                if prefix == "--charset=" {
-                    crate::color::initlinedraw(true);
-                }
                 std::process::exit(1);
             }
         } else if *n < args.len() + 1 {
@@ -1275,9 +1272,6 @@ fn long_arg<'a>(args: &'a [String], i: usize, j: &mut usize, n: &mut usize, pref
         } else {
             // C: else { 报错 }
             eprintln!("tree: Missing argument to {}", prefix);
-            if prefix == "--charset" {
-                crate::color::initlinedraw(true);
-            }
             std::process::exit(1);
         }
     } else {
@@ -1305,7 +1299,7 @@ pub fn usage(n: i32) {
 \t[\x08--gitfile\r[\x08=\r]\x0cfile\r] [\x08--matchdirs\r] [\x08--metafirst\r] [\x08--ignore-case\r]\n\
 \t[\x08--nolinks\r] [\x08--hintro\r[\x08=\r]\x0cfile\r] [\x08--houtro\r[\x08=\r]\x0cfile\r] [\x08--inodes\r] [\x08--device\r]\n\
 \t[\x08--sort\r[\x08=\r]\x0cname\r] [\x08--dirsfirst\r] [\x08--filesfirst\r] [\x08--filelimit\r[\x08=\r]\x0c#\r] [\x08--si\r]\n\
-\t[\x08--du\r] [\x08--prune\r] [\x08--charset\r[\x08=\r]\x0cX\r] [\x08--timefmt\r[\x08=\r]\x0cformat\r] [\x08--fromfile\r]\n\
+\t[\x08--du\r] [\x08--prune\r] [\x08--timefmt\r[\x08=\r]\x0cformat\r] [\x08--fromfile\r]\n\
 \t[\x08--fromtabfile\r] [\x08--fflinks\r] [\x08--info\r] [\x08--infofile\r[\x08=\r]\x0cfile\r] [\x08--noreport\r]\n\
 \t[\x08--hyperlink\r] [\x08--scheme\r[\x08=\r]\x0cschema\r] [\x08--authority\r[\x08=\r]\x0chost\r] [\x08--opt-toggle\r]\n\
 \t[\x08--compress\r[\x08=\r]\x0c#\r] [\x08--condense\r] [\x08--version\r] [\x08--help\r]\n\
@@ -1336,7 +1330,6 @@ pub fn usage(n: i32) {
   \x08--info\r        Print information about files found in \x08.info\r files.\n\
   \x08--infofile\r \x0cX\r  Explicitly read info file.\n\
   \x08--noreport\r    Turn off file/directory count at end of tree listing.\n\
-  \x08--charset\r \x0cX\r   Use charset \x0cX\r for terminal/HTML and indentation line output.\n\
   \x08--filelimit\r \x0c#\r Do not descend dirs with more than \x0c#\r files in them.\n\
   \x08--condense\r    Condense directory singletons to a single line of output.\n\
   \x08-o\r \x0cfilename\r   Output to file instead of stdout.\n\
@@ -1649,24 +1642,8 @@ fn main() {
         libc::setlocale(libc::LC_COLLATE, empty.as_ptr());
     }
 
-    // C: charset = getcharset(); if (charset == NULL && nl_langinfo(CODESET) 是 UTF-8) charset = "UTF-8";
-    // unsafe：读写全局 CHARSET
-    unsafe {
-        CHARSET = crate::color::getcharset();
-        #[cfg(unix)]
-        if CHARSET.is_none() {
-            // unsafe：调用 C 库函数 nl_langinfo（libc 无安全封装）
-            let cs = std::ffi::CStr::from_ptr(libc::nl_langinfo(libc::CODESET));
-            let cs = cs.to_string_lossy();
-            if cs == "UTF-8" || cs == "utf8" {
-                CHARSET = Some("UTF-8");
-            }
-        }
-        #[cfg(not(unix))]
-        if CHARSET.is_none() {
-            // 非 Unix 平台无 nl_langinfo；保持 None（字符集由 getcharset 决定）
-        }
-    }
+    // C: charset = getcharset(); ...（字符集检测已随 --charset/TREE_CHARSET 机制移除，
+    // 图形线固定为 UTF-8 或默认，见 color.rs 的 initlinedraw）
 
     // C: lc = (struct listingcalls){ null_intro, ..., unix_report };
     // unsafe：写全局 LC
@@ -2012,11 +1989,7 @@ fn main() {
                                     FLAG.flimit = a.parse::<i32>().unwrap_or(0);
                                     break;
                                 }
-                                if let Some(a) = long_arg(&args, i, &mut j, &mut n, "--charset") {
-                                    // C: charset = arg（argv 指针，进程级生命周期）→ leak_str 提升为 'static
-                                    CHARSET = Some(leak_str(a.to_string()));
-                                    break;
-                                }
+                                // --charset 已随字符集机制移除（图形线固定 UTF-8 或默认）
                                 if argi == "--si" {
                                     j = argi.len() - 1;
                                     FLAG.s = true;
