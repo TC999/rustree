@@ -18,6 +18,7 @@ mod globals;
 mod hash;
 mod html;
 mod info;
+mod json;
 mod list;
 mod strverscmp;
 mod tree;
