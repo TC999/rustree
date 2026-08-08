@@ -36,12 +36,80 @@ html-title = 目录树
 html-author = 由 'tree' 生成
 
 ## ---- usage / 帮助文本 ----
+## 每行一条独立消息（纯文本，选项名与描述内联）；
+## usage-summary 为多行（\u000A 换行、\u0009 缩进）
 
-usage-summary = { "用法：\u0008tree\u000D [\u0008-acdfghilnpqrstuvxACDFJQNUX\u000D] [\u0008-L\u000D \u000C层级\u000D [\u0008-R\u000D]] [\u0008-H\u000D [-]\u000C基本HREF\u000D]\u000A\u0009[\u0008-T\u000D \u000C标题\u000D] [\u0008-o\u000D \u000C文件名\u000D] [\u0008-P\u000D \u000C模式\u000D] [\u0008-I\u000D \u000C模式\u000D] [\u0008--gitignore\u000D]\u000A\u0009[\u0008--gitfile\u000D[\u0008=\u000D]\u000C文件\u000D] [\u0008--matchdirs\u000D] [\u0008--metafirst\u000D] [\u0008--ignore-case\u000D]\u000A\u0009[\u0008--nolinks\u000D] [\u0008--hintro\u000D[\u0008=\u000D]\u000C文件\u000D] [\u0008--houtro\u000D[\u0008=\u000D]\u000C文件\u000D] [\u0008--inodes\u000D] [\u0008--device\u000D]\u000A\u0009[\u0008--sort\u000D[\u0008=\u000D]\u000C名称\u000D] [\u0008--dirsfirst\u000D] [\u0008--filesfirst\u000D] [\u0008--filelimit\u000D[\u0008=\u000D]\u000C#\u000D] [\u0008--si\u000D]\u000A\u0009[\u0008--du\u000D] [\u0008--prune\u000D] [\u0008--timefmt\u000D[\u0008=\u000D]\u000C格式\u000D] [\u0008--fromfile\u000D]\u000A\u0009[\u0008--fromtabfile\u000D] [\u0008--fflinks\u000D] [\u0008--info\u000D] [\u0008--infofile\u000D[\u0008=\u000D]\u000C文件\u000D] [\u0008--noreport\u000D]\u000A\u0009[\u0008--hyperlink\u000D] [\u0008--scheme\u000D[\u0008=\u000D]\u000C方案\u000D] [\u0008--authority\u000D[\u0008=\u000D]\u000C主机\u000D] [\u0008--opt-toggle\u000D]\u000A\u0009[\u0008--compress\u000D[\u0008=\u000D]\u000C#\u000D] [\u0008--condense\u000D] [\u0008--version\u000D] [\u0008--help\u000D]\u000A\u0009[\u0008--\u000D] [\u000C目录\u000D \u0008...\u000D]" }
-usage-listing = { "  \u0008------- 列出选项 -------\u000D\u000A  \u0008-a\u000D            列出所有文件。\u000A  \u0008-d\u000D            只列出目录。\u000A  \u0008-l\u000D            像目录一样跟随符号链接。\u000A  \u0008-f\u000D            为每个文件打印完整路径前缀。\u000A  \u0008-x\u000D            仅停留在当前文件系统。\u000A  \u0008-L\u000D \u000C层级\u000D      只深入 \u000C层级\u000D 层目录。\u000A  \u0008-R\u000D            到达最大目录层级时重新运行 tree。\u000A  \u0008-P\u000D \u000C模式\u000D    只列出与给定模式匹配的文件。\u000A  \u0008-I\u000D \u000C模式\u000D    不列出与给定模式匹配的文件。\u000A  \u0008--gitignore\u000D   使用 \u0008.gitignore\u000D 文件过滤。\u000A  \u0008--gitfile\u000D \u000CX\u000D   显式读取 gitignore 文件。\u000A  \u0008--ignore-case\u000D 模式匹配时忽略大小写。\u000A  \u0008--matchdirs\u000D   在 \u0008-P\u000D 模式匹配中包含目录名。\u000A  \u0008--metafirst\u000D   在每行开头打印元数据。\u000A  \u0008--prune\u000D       从输出中修剪空目录。\u000A  \u0008--info\u000D        打印 \u0008.info\u000D 文件中找到的文件信息。\u000A  \u0008--infofile\u000D \u000CX\u000D 显式读取信息文件。\u000A  \u0008--noreport\u000D    在 tree 列表末尾关闭文件/目录计数。\u000A  \u0008--filelimit\u000D \u000C#\u000D 不进入超过 \u000C#\u000D 个文件的目录。\u000A  \u0008--condense\u000D    将单例目录压缩为单行输出。\u000A  \u0008-o\u000D \u000C文件名\u000D   输出到文件而非 stdout。" }
-usage-file = { "  \u0008------- 文件选项 -------\u000D\u000A  \u0008-q\u000D            将不可打印字符打印为 '\u0008?\u000D'。\u000A  \u0008-N\u000D            按原样打印不可打印字符。\u000A  \u0008-Q\u000D            用双引号引用文件名。\u000A  \u0008-p\u000D            打印每个文件的权限。\u000A  \u0008-u\u000D            显示文件所有者或 UID 号。\u000A  \u0008-g\u000D            显示文件组所有者或 GID 号。\u000A  \u0008-s\u000D            打印每个文件的字节大小。\u000A  \u0008-h\u000D            以更人性化的方式打印大小。\u000A  \u0008--si\u000D          类似 \u0008-h\u000D，但使用 SI 单位（1000 的幂）。\u000A  \u0008--du\u000D          按内容计算目录大小。\u000A  \u0008-D\u000D            打印最后修改或 (-c) 状态变更的日期。\u000A  \u0008--timefmt\u000D \u000C格式\u000D 按 \u000C格式\u000D 打印和格式化时间。\u000A  \u0008-F\u000D            按 \u0008ls -F\u000D 追加 '\u0008/\u000D'、'\u0008=\u000D'、'\u0008*\u000D'、'\u0008@\u000D'、'\u0008|\u000D' 或 '\u0008>\u000D'。\u000A  \u0008--inodes\u000D      打印每个文件的 inode 号。\u000A  \u0008--device\u000D      打印每个文件所属的设备 ID 号。" }
-usage-sorting = { "  \u0008------- 排序选项 -------\u000D\u000A  \u0008-v\u000D            按版本字母数字排序文件。\u000A  \u0008-t\u000D            按最后修改时间排序文件。\u000A  \u0008-c\u000D            按最后状态变更时间排序文件。\u000A  \u0008-U\u000D            保持文件不排序。\u000A  \u0008-r\u000D            反转排序顺序。\u000A  \u0008--dirsfirst\u000D  先列出目录后列出文件（\u0008-U\u000D 禁用）。\u000A  \u0008--filesfirst\u000D 先列出文件后列出目录（\u0008-U\u000D 禁用）。\u000A  \u0008--sort\u000D \u000CX\u000D      选择排序：\u0008\u000C名称\u000D,\u0008\u000C版本\u000D,\u0008\u000C大小\u000D,\u0008\u000C修改时间\u000D,\u0008\u000C变更时间\u000D,\u0008\u000C无\u000D." }
-usage-graphics = { "  \u0008------- 图形选项 -------\u000D\u000A  \u0008-i\u000D            不打印缩进线。\u000A  \u0008-A\u000D            打印 UTF-8 图形缩进线。\u000A  \u0008-n\u000D            始终关闭彩色化（\u0008-C\u000D 覆盖）。\u000A  \u0008-C\u000D            始终打开彩色化。\u000A  \u0008--compress\u000D \u000C#\u000D  压缩缩进线。" }
-usage-xml-html = { "  \u0008------- XML/HTML/JSON/HYPERLINK 选项 -------\u000D\u000A  \u0008-X\u000D            打印树的 XML 表示。\u000A  \u0008-J\u000D            打印树的 JSON 表示。\u000A  \u0008-H\u000D \u000C基本HREF\u000D   以 \u000C基本HREF\u000D 作为顶层目录打印 HTML 格式。\u000A  \u0008-T\u000D \u000C字符串\u000D    用 \u000C字符串\u000D 替换默认的 HTML 标题和 H1 头。\u000A  \u0008--nolinks\u000D     关闭 HTML 输出中的超链接。\u000A  \u0008--hintro\u000D \u000CX\u000D    使用文件 \u000CX\u000D 作为 HTML 简介。\u000A  \u0008--houtro\u000D \u000CX\u000D    使用文件 \u000CX\u000D 作为 HTML 结尾。\u000A  \u0008--hyperlink\u000D   打开 OSC 8 终端超链接。\u000A  \u0008--scheme\u000D \u000CX\u000D    设置 OSC 8 超链接方案，默认 \u0008\u000Cfile://\u000D\u000A  \u0008--authority\u000D \u000CX\u000D 设置 OSC 8 超链接主机/主机名。" }
-usage-input = { "  \u0008------- 输入选项 -------\u000D\u000A  \u0008--fromfile\u000D    从文件读取路径（\u0008.\u000D=stdin）\u000A  \u0008--fromtabfile\u000D 从制表符缩进的文件读取树（\u0008.\u000D=stdin）\u000A  \u0008--fflinks\u000D     使用 \u0008--fromfile\u000D 时处理链接信息。" }
-usage-misc = { "  \u0008------- 其他选项 -------\u000D\u000A  \u0008--opt-toggle\u000D  启用选项切换。\u000A  \u0008--version\u000D     打印版本并退出。\u000A  \u0008--help\u000D        打印用法和本帮助信息并退出。\u000A  \u0008--\u000D            选项处理终止符。" }
+usage-summary = { "用法：tree [-acdfghilnpqrstuvxACDFJQNUX] [-L 层级 [-R]] [-H [-]基本HREF]\u000A\u0009[-T 标题] [-o 文件名] [-P 模式] [-I 模式] [--gitignore]\u000A\u0009[--gitfile[=]文件] [--matchdirs] [--metafirst] [--ignore-case]\u000A\u0009[--nolinks] [--hintro[=]文件] [--houtro[=]文件] [--inodes] [--device]\u000A\u0009[--sort[=]名称] [--dirsfirst] [--filesfirst] [--filelimit[=]#] [--si]\u000A\u0009[--du] [--prune] [--timefmt[=]格式] [--fromfile]\u000A\u0009[--fromtabfile] [--fflinks] [--info] [--infofile[=]文件] [--noreport]\u000A\u0009[--hyperlink] [--scheme[=]方案] [--authority[=]主机] [--opt-toggle]\u000A\u0009[--compress[=]#] [--condense] [--version] [--help]\u000A\u0009[--] [目录 ...]" }
+help-listing-options = { "  ------- 列出选项 -------" }
+help-all-files = { "  -a            列出所有文件。" }
+help-list-dirs-only = { "  -d            只列出目录。" }
+help-follow-symlinks = { "  -l            像目录一样跟随符号链接。" }
+help-print-full-path = { "  -f            为每个文件打印完整路径前缀。" }
+help-stay-on-fs = { "  -x            仅停留在当前文件系统。" }
+help-descend-level = { "  -L 层级      只深入 层级 层目录。" }
+help-rerun-tree = { "  -R            到达最大目录层级时重新运行 tree。" }
+help-list-match-pattern = { "  -P 模式    只列出与给定模式匹配的文件。" }
+help-exclude-match-pattern = { "  -I 模式    不列出与给定模式匹配的文件。" }
+help-filter-gitignore = { "  --gitignore   使用 .gitignore 文件过滤。" }
+help-explicit-gitfile = { "  --gitfile X   显式读取 gitignore 文件。" }
+help-ignore-case = { "  --ignore-case 模式匹配时忽略大小写。" }
+help-match-dirs = { "  --matchdirs   在 -P 模式匹配中包含目录名。" }
+help-meta-first = { "  --metafirst   在每行开头打印元数据。" }
+help-prune-empty-dirs = { "  --prune       从输出中修剪空目录。" }
+help-info-files = { "  --info        打印 .info 文件中找到的文件信息。" }
+help-explicit-infofile = { "  --infofile X 显式读取信息文件。" }
+help-no-report = { "  --noreport    在 tree 列表末尾关闭文件/目录计数。" }
+help-file-limit = { "  --filelimit # 不进入超过 # 个文件的目录。" }
+help-condense = { "  --condense    将单例目录压缩为单行输出。" }
+help-output-file = { "  -o 文件名   输出到文件而非 stdout。" }
+help-file-options = { "  ------- 文件选项 -------" }
+help-print-nonprintable = { "  -q            将不可打印字符打印为 '?'。" }
+help-print-raw = { "  -N            按原样打印不可打印字符。" }
+help-quote-filenames = { "  -Q            用双引号引用文件名。" }
+help-print-protections = { "  -p            打印每个文件的权限。" }
+help-display-owner = { "  -u            显示文件所有者或 UID 号。" }
+help-display-group = { "  -g            显示文件组所有者或 GID 号。" }
+help-print-size = { "  -s            打印每个文件的字节大小。" }
+help-human-readable-size = { "  -h            以更人性化的方式打印大小。" }
+help-si-units = { "  --si          类似 -h，但使用 SI 单位（1000 的幂）。" }
+help-compute-dir-size = { "  --du          按内容计算目录大小。" }
+help-print-date = { "  -D            打印最后修改或 (-c) 状态变更的日期。" }
+help-time-format = { "  --timefmt 格式 按 格式 打印和格式化时间。" }
+help-append-ls = { "  -F            按 ls -F 追加 '/', '=', '*', '@', '|' 或 '>'。" }
+help-print-inodes = { "  --inodes      打印每个文件的 inode 号。" }
+help-print-device = { "  --device      打印每个文件所属的设备 ID 号。" }
+help-sorting-options = { "  ------- 排序选项 -------" }
+help-sort-version = { "  -v            按版本字母数字排序文件。" }
+help-sort-mtime = { "  -t            按最后修改时间排序文件。" }
+help-sort-ctime = { "  -c            按最后状态变更时间排序文件。" }
+help-unsorted = { "  -U            保持文件不排序。" }
+help-reverse-sort = { "  -r            反转排序顺序。" }
+help-dirs-first = { "  --dirsfirst  先列出目录后列出文件（-U 禁用）。" }
+help-files-first = { "  --filesfirst 先列出文件后列出目录（-U 禁用）。" }
+help-select-sort = { "  --sort X      选择排序：名称,版本,大小,修改时间,变更时间,无。" }
+help-graphics-options = { "  ------- 图形选项 -------" }
+help-no-indent = { "  -i            不打印缩进线。" }
+help-ansi-lines = { "  -A            打印 UTF-8 图形缩进线。" }
+help-no-color = { "  -n            始终关闭彩色化（-C 覆盖）。" }
+help-force-color = { "  -C            始终打开彩色化。" }
+help-compress-lines = { "  --compress #  压缩缩进线。" }
+help-xml-html-options = { "  ------- XML/HTML/JSON/HYPERLINK 选项 -------" }
+help-xml-output = { "  -X            打印树的 XML 表示。" }
+help-json-output = { "  -J            打印树的 JSON 表示。" }
+help-html-output = { "  -H 基本HREF   以 基本HREF 作为顶层目录打印 HTML 格式。" }
+help-html-title = { "  -T 字符串    用 字符串 替换默认的 HTML 标题和 H1 头。" }
+help-no-links = { "  --nolinks     关闭 HTML 输出中的超链接。" }
+help-html-intro = { "  --hintro X    使用文件 X 作为 HTML 简介。" }
+help-html-outro = { "  --houtro X    使用文件 X 作为 HTML 结尾。" }
+help-hyperlink = { "  --hyperlink   打开 OSC 8 终端超链接。" }
+help-scheme = { "  --scheme X    设置 OSC 8 超链接方案，默认 file://" }
+help-authority = { "  --authority X 设置 OSC 8 超链接主机/主机名。" }
+help-input-options = { "  ------- 输入选项 -------" }
+help-from-file = { "  --fromfile    从文件读取路径（.=stdin）" }
+help-from-tabfile = { "  --fromtabfile 从制表符缩进的文件读取树（.=stdin）" }
+help-fflinks = { "  --fflinks     使用 --fromfile 时处理链接信息。" }
+help-misc-options = { "  ------- 其他选项 -------" }
+help-opt-toggle = { "  --opt-toggle  启用选项切换。" }
+help-print-version = { "  --version     打印版本并退出。" }
+help-print-help = { "  --help        打印用法和本帮助信息并退出。" }
+help-options-terminator = { "  --            选项处理终止符。" }

@@ -1123,6 +1123,84 @@ fn long_arg<'a>(args: &'a [String], i: usize, j: &mut usize, n: &mut usize, pref
 
 // === 原 C 函数：void usage(int n) ===
 /// 打印使用说明。n < 2 时输出到 stderr（错误时），否则 stdout 并 exit(0)。
+// 帮助文本逐行消息 ID（每行一条 FTL 消息，见 locales/en.ftl 与 locales/zh-CN.ftl；
+// 参照 riptree 的语言文件风格拆分，便于逐行维护与翻译）
+const USAGE_HELP_LINES: &[&str] = &[
+    "help-listing-options",
+    "help-all-files",
+    "help-list-dirs-only",
+    "help-follow-symlinks",
+    "help-print-full-path",
+    "help-stay-on-fs",
+    "help-descend-level",
+    "help-rerun-tree",
+    "help-list-match-pattern",
+    "help-exclude-match-pattern",
+    "help-filter-gitignore",
+    "help-explicit-gitfile",
+    "help-ignore-case",
+    "help-match-dirs",
+    "help-meta-first",
+    "help-prune-empty-dirs",
+    "help-info-files",
+    "help-explicit-infofile",
+    "help-no-report",
+    "help-file-limit",
+    "help-condense",
+    "help-output-file",
+    "help-file-options",
+    "help-print-nonprintable",
+    "help-print-raw",
+    "help-quote-filenames",
+    "help-print-protections",
+    "help-display-owner",
+    "help-display-group",
+    "help-print-size",
+    "help-human-readable-size",
+    "help-si-units",
+    "help-compute-dir-size",
+    "help-print-date",
+    "help-time-format",
+    "help-append-ls",
+    "help-print-inodes",
+    "help-print-device",
+    "help-sorting-options",
+    "help-sort-version",
+    "help-sort-mtime",
+    "help-sort-ctime",
+    "help-unsorted",
+    "help-reverse-sort",
+    "help-dirs-first",
+    "help-files-first",
+    "help-select-sort",
+    "help-graphics-options",
+    "help-no-indent",
+    "help-ansi-lines",
+    "help-no-color",
+    "help-force-color",
+    "help-compress-lines",
+    "help-xml-html-options",
+    "help-xml-output",
+    "help-json-output",
+    "help-html-output",
+    "help-html-title",
+    "help-no-links",
+    "help-html-intro",
+    "help-html-outro",
+    "help-hyperlink",
+    "help-scheme",
+    "help-authority",
+    "help-input-options",
+    "help-from-file",
+    "help-from-tabfile",
+    "help-fflinks",
+    "help-misc-options",
+    "help-opt-toggle",
+    "help-print-version",
+    "help-print-help",
+    "help-options-terminator",
+];
+
 pub fn usage(n: i32) {
     crate::color::parse_dir_colors();
     crate::color::initlinedraw(false);
@@ -1136,17 +1214,19 @@ pub fn usage(n: i32) {
         &mut stdout_out
     };
     crate::color::fancy(out, &crate::tr!("usage-summary"));
+    // summary 消息以纯文本结束（无尾换行），补一个换行
+    out.write_all(b"\n").ok();
 
     if n < 2 {
         return;
     }
-        crate::color::fancy(&mut std::io::stdout(), &crate::tr!("usage-listing"));
-    crate::color::fancy(&mut std::io::stdout(), &crate::tr!("usage-file"));
-    crate::color::fancy(&mut std::io::stdout(), &crate::tr!("usage-sorting"));
-    crate::color::fancy(&mut std::io::stdout(), &crate::tr!("usage-graphics"));
-    crate::color::fancy(&mut std::io::stdout(), &crate::tr!("usage-xml-html"));
-    crate::color::fancy(&mut std::io::stdout(), &crate::tr!("usage-input"));
-    crate::color::fancy(&mut std::io::stdout(), &crate::tr!("usage-misc"));
+    // 逐行输出帮助文本（每行一条消息，无 fancy 控制字符，纯文本）
+    for msg in USAGE_HELP_LINES {
+        let line = crate::i18n::tr(msg, &[]);
+        crate::color::fancy(&mut std::io::stdout(), &line);
+        // 每条消息一行：消息值不含换行，输出端补
+        std::io::Write::write_all(&mut std::io::stdout(), b"\n").ok();
+    }
     std::process::exit(0);
 }
 

@@ -55,12 +55,80 @@ html-title = Directory Tree
 html-author = Made by 'tree'
 
 ## ---- usage / 帮助文本 ----
+## 每行一条独立消息（纯文本，选项名与描述内联）；
+## usage-summary 为多行（\u000A 换行、\u0009 缩进）
 
-usage-summary = { "usage: \u0008tree\u000D [\u0008-acdfghilnpqrstuvxACDFJQNUX\u000D] [\u0008-L\u000D \u000Clevel\u000D [\u0008-R\u000D]] [\u0008-H\u000D [-]\u000CbaseHREF\u000D]\u000A\u0009[\u0008-T\u000D \u000Ctitle\u000D] [\u0008-o\u000D \u000Cfilename\u000D] [\u0008-P\u000D \u000Cpattern\u000D] [\u0008-I\u000D \u000Cpattern\u000D] [\u0008--gitignore\u000D]\u000A\u0009[\u0008--gitfile\u000D[\u0008=\u000D]\u000Cfile\u000D] [\u0008--matchdirs\u000D] [\u0008--metafirst\u000D] [\u0008--ignore-case\u000D]\u000A\u0009[\u0008--nolinks\u000D] [\u0008--hintro\u000D[\u0008=\u000D]\u000Cfile\u000D] [\u0008--houtro\u000D[\u0008=\u000D]\u000Cfile\u000D] [\u0008--inodes\u000D] [\u0008--device\u000D]\u000A\u0009[\u0008--sort\u000D[\u0008=\u000D]\u000Cname\u000D] [\u0008--dirsfirst\u000D] [\u0008--filesfirst\u000D] [\u0008--filelimit\u000D[\u0008=\u000D]\u000C#\u000D] [\u0008--si\u000D]\u000A\u0009[\u0008--du\u000D] [\u0008--prune\u000D] [\u0008--timefmt\u000D[\u0008=\u000D]\u000Cformat\u000D] [\u0008--fromfile\u000D]\u000A\u0009[\u0008--fromtabfile\u000D] [\u0008--fflinks\u000D] [\u0008--info\u000D] [\u0008--infofile\u000D[\u0008=\u000D]\u000Cfile\u000D] [\u0008--noreport\u000D]\u000A\u0009[\u0008--hyperlink\u000D] [\u0008--scheme\u000D[\u0008=\u000D]\u000Cschema\u000D] [\u0008--authority\u000D[\u0008=\u000D]\u000Chost\u000D] [\u0008--opt-toggle\u000D]\u000A\u0009[\u0008--compress\u000D[\u0008=\u000D]\u000C#\u000D] [\u0008--condense\u000D] [\u0008--version\u000D] [\u0008--help\u000D]\u000A\u0009[\u0008--\u000D] [\u000Cdirectory\u000D \u0008...\u000D]" }
-usage-listing = { "  \u0008------- Listing options -------\u000D\u000A  \u0008-a\u000D            All files are listed.\u000A  \u0008-d\u000D            List directories only.\u000A  \u0008-l\u000D            Follow symbolic links like directories.\u000A  \u0008-f\u000D            Print the full path prefix for each file.\u000A  \u0008-x\u000D            Stay on current filesystem only.\u000A  \u0008-L\u000D \u000Clevel\u000D      Descend only \u000Clevel\u000D directories deep.\u000A  \u0008-R\u000D            Rerun tree when max dir level reached.\u000A  \u0008-P\u000D \u000Cpattern\u000D    List only those files that match the pattern given.\u000A  \u0008-I\u000D \u000Cpattern\u000D    Do not list files that match the given pattern.\u000A  \u0008--gitignore\u000D   Filter by using \u0008.gitignore\u000D files.\u000A  \u0008--gitfile\u000D \u000CX\u000D   Explicitly read a gitignore file.\u000A  \u0008--ignore-case\u000D Ignore case when pattern matching.\u000A  \u0008--matchdirs\u000D   Include directory names in \u0008-P\u000D pattern matching.\u000A  \u0008--metafirst\u000D   Print meta-data at the beginning of each line.\u000A  \u0008--prune\u000D       Prune empty directories from the output.\u000A  \u0008--info\u000D        Print information about files found in \u0008.info\u000D files.\u000A  \u0008--infofile\u000D \u000CX\u000D  Explicitly read info file.\u000A  \u0008--noreport\u000D    Turn off file/directory count at end of tree listing.\u000A  \u0008--filelimit\u000D \u000C#\u000D Do not descend dirs with more than \u000C#\u000D files in them.\u000A  \u0008--condense\u000D    Condense directory singletons to a single line of output.\u000A  \u0008-o\u000D \u000Cfilename\u000D   Output to file instead of stdout." }
-usage-file = { "  \u0008------- File options -------\u000D\u000A  \u0008-q\u000D            Print non-printable characters as '\u0008?\u000D'.\u000A  \u0008-N\u000D            Print non-printable characters as is.\u000A  \u0008-Q\u000D            Quote filenames with double quotes.\u000A  \u0008-p\u000D            Print the protections for each file.\u000A  \u0008-u\u000D            Displays file owner or UID number.\u000A  \u0008-g\u000D            Displays file group owner or GID number.\u000A  \u0008-s\u000D            Print the size in bytes of each file.\u000A  \u0008-h\u000D            Print the size in a more human readable way.\u000A  \u0008--si\u000D          Like \u0008-h\u000D, but use in SI units (powers of 1000).\u000A  \u0008--du\u000D          Compute size of directories by their contents.\u000A  \u0008-D\u000D            Print the date of last modification or (-c) status change.\u000A  \u0008--timefmt\u000D \u000Cfmt\u000D Print and format time according to the format \u000Cfmt\u000D.\u000A  \u0008-F\u000D            Appends '\u0008/\u000D', '\u0008=\u000D', '\u0008*\u000D', '\u0008@\u000D', '\u0008|\u000D' or '\u0008>\u000D' as per \u0008ls -F\u000D.\u000A  \u0008--inodes\u000D      Print inode number of each file.\u000A  \u0008--device\u000D      Print device ID number to which each file belongs." }
-usage-sorting = { "  \u0008------- Sorting options -------\u000D\u000A  \u0008-v\u000D            Sort files alphanumerically by version.\u000A  \u0008-t\u000D            Sort files by last modification time.\u000A  \u0008-c\u000D            Sort files by last status change time.\u000A  \u0008-U\u000D            Leave files unsorted.\u000A  \u0008-r\u000D            Reverse the order of the sort.\u000A  \u0008--dirsfirst\u000D   List directories before files (\u0008-U\u000D disables).\u000A  \u0008--filesfirst\u000D  List files before directories (\u0008-U\u000D disables).\u000A  \u0008--sort\u000D \u000CX\u000D      Select sort: \u0008\u000Cname\u000D,\u0008\u000Cversion\u000D,\u0008\u000Csize\u000D,\u0008\u000Cmtime\u000D,\u0008\u000Cctime\u000D,\u0008\u000Cnone\u000D." }
-usage-graphics = { "  \u0008------- Graphics options -------\u000D\u000A  \u0008-i\u000D            Don't print indentation lines.\u000A  \u0008-A\u000D            Print UTF-8 graphic indentation lines.\u000A  \u0008-n\u000D            Turn colorization off always (\u0008-C\u000D overrides).\u000A  \u0008-C\u000D            Turn colorization on always.\u000A  \u0008--compress\u000D \u000C#\u000D  Compress indentation lines." }
-usage-xml-html = { "  \u0008------- XML/HTML/JSON/HYPERLINK options -------\u000D\u000A  \u0008-X\u000D            Prints out an XML representation of the tree.\u000A  \u0008-J\u000D            Prints out an JSON representation of the tree.\u000A  \u0008-H\u000D \u000CbaseHREF\u000D   Prints out HTML format with \u000CbaseHREF\u000D as top directory.\u000A  \u0008-T\u000D \u000Cstring\u000D     Replace the default HTML title and H1 header with \u000Cstring\u000D.\u000A  \u0008--nolinks\u000D     Turn off hyperlinks in HTML output.\u000A  \u0008--hintro\u000D \u000CX\u000D    Use file \u000CX\u000D as the HTML intro.\u000A  \u0008--houtro\u000D \u000CX\u000D    Use file \u000CX\u000D as the HTML outro.\u000A  \u0008--hyperlink\u000D   Turn on OSC 8 terminal hyperlinks.\u000A  \u0008--scheme\u000D \u000CX\u000D    Set OSC 8 hyperlink scheme, default \u0008\u000Cfile://\u000D\u000A  \u0008--authority\u000D \u000CX\u000D Set OSC 8 hyperlink authority/hostname." }
-usage-input = { "  \u0008------- Input options -------\u000D\u000A  \u0008--fromfile\u000D    Reads paths from files (\u0008.\u000D=stdin)\u000A  \u0008--fromtabfile\u000D Reads trees from tab indented files (\u0008.\u000D=stdin)\u000A  \u0008--fflinks\u000D     Process link information when using \u0008--fromfile\u000D." }
-usage-misc = { "  \u0008------- Miscellaneous options -------\u000D\u000A  \u0008--opt-toggle\u000D  Enable option toggling.\u000A  \u0008--version\u000D     Print version and exit.\u000A  \u0008--help\u000D        Print usage and this help message and exit.\u000A  \u0008--\u000D            Options processing terminator." }
+usage-summary = { "usage: tree [-acdfghilnpqrstuvxACDFJQNUX] [-L level [-R]] [-H [-]baseHREF]\u000A\u0009[-T title] [-o filename] [-P pattern] [-I pattern] [--gitignore]\u000A\u0009[--gitfile[=]file] [--matchdirs] [--metafirst] [--ignore-case]\u000A\u0009[--nolinks] [--hintro[=]file] [--houtro[=]file] [--inodes] [--device]\u000A\u0009[--sort[=]name] [--dirsfirst] [--filesfirst] [--filelimit[=]#] [--si]\u000A\u0009[--du] [--prune] [--timefmt[=]format] [--fromfile]\u000A\u0009[--fromtabfile] [--fflinks] [--info] [--infofile[=]file] [--noreport]\u000A\u0009[--hyperlink] [--scheme[=]schema] [--authority[=]host] [--opt-toggle]\u000A\u0009[--compress[=]#] [--condense] [--version] [--help]\u000A\u0009[--] [directory ...]" }
+help-listing-options = { "  ------- Listing options -------" }
+help-all-files = { "  -a            All files are listed." }
+help-list-dirs-only = { "  -d            List directories only." }
+help-follow-symlinks = { "  -l            Follow symbolic links like directories." }
+help-print-full-path = { "  -f            Print the full path prefix for each file." }
+help-stay-on-fs = { "  -x            Stay on current filesystem only." }
+help-descend-level = { "  -L level      Descend only level directories deep." }
+help-rerun-tree = { "  -R            Rerun tree when max dir level reached." }
+help-list-match-pattern = { "  -P pattern    List only those files that match the pattern given." }
+help-exclude-match-pattern = { "  -I pattern    Do not list files that match the given pattern." }
+help-filter-gitignore = { "  --gitignore   Filter by using .gitignore files." }
+help-explicit-gitfile = { "  --gitfile X   Explicitly read a gitignore file." }
+help-ignore-case = { "  --ignore-case Ignore case when pattern matching." }
+help-match-dirs = { "  --matchdirs   Include directory names in -P pattern matching." }
+help-meta-first = { "  --metafirst   Print meta-data at the beginning of each line." }
+help-prune-empty-dirs = { "  --prune       Prune empty directories from the output." }
+help-info-files = { "  --info        Print information about files found in .info files." }
+help-explicit-infofile = { "  --infofile X  Explicitly read info file." }
+help-no-report = { "  --noreport    Turn off file/directory count at end of tree listing." }
+help-file-limit = { "  --filelimit # Do not descend dirs with more than # files in them." }
+help-condense = { "  --condense    Condense directory singletons to a single line of output." }
+help-output-file = { "  -o filename   Output to file instead of stdout." }
+help-file-options = { "  ------- File options -------" }
+help-print-nonprintable = { "  -q            Print non-printable characters as '?'." }
+help-print-raw = { "  -N            Print non-printable characters as is." }
+help-quote-filenames = { "  -Q            Quote filenames with double quotes." }
+help-print-protections = { "  -p            Print the protections for each file." }
+help-display-owner = { "  -u            Displays file owner or UID number." }
+help-display-group = { "  -g            Displays file group owner or GID number." }
+help-print-size = { "  -s            Print the size in bytes of each file." }
+help-human-readable-size = { "  -h            Print the size in a more human readable way." }
+help-si-units = { "  --si          Like -h, but use in SI units (powers of 1000)." }
+help-compute-dir-size = { "  --du          Compute size of directories by their contents." }
+help-print-date = { "  -D            Print the date of last modification or (-c) status change." }
+help-time-format = { "  --timefmt fmt Print and format time according to the format fmt." }
+help-append-ls = { "  -F            Appends '/', '=', '*', '@', '|' or '>' as per ls -F." }
+help-print-inodes = { "  --inodes      Print inode number of each file." }
+help-print-device = { "  --device      Print device ID number to which each file belongs." }
+help-sorting-options = { "  ------- Sorting options -------" }
+help-sort-version = { "  -v            Sort files alphanumerically by version." }
+help-sort-mtime = { "  -t            Sort files by last modification time." }
+help-sort-ctime = { "  -c            Sort files by last status change time." }
+help-unsorted = { "  -U            Leave files unsorted." }
+help-reverse-sort = { "  -r            Reverse the order of the sort." }
+help-dirs-first = { "  --dirsfirst   List directories before files (-U disables)." }
+help-files-first = { "  --filesfirst  List files before directories (-U disables)." }
+help-select-sort = { "  --sort X      Select sort: name,version,size,mtime,ctime,none." }
+help-graphics-options = { "  ------- Graphics options -------" }
+help-no-indent = { "  -i            Don't print indentation lines." }
+help-ansi-lines = { "  -A            Print UTF-8 graphic indentation lines." }
+help-no-color = { "  -n            Turn colorization off always (-C overrides)." }
+help-force-color = { "  -C            Turn colorization on always." }
+help-compress-lines = { "  --compress #  Compress indentation lines." }
+help-xml-html-options = { "  ------- XML/HTML/JSON/HYPERLINK options -------" }
+help-xml-output = { "  -X            Prints out an XML representation of the tree." }
+help-json-output = { "  -J            Prints out an JSON representation of the tree." }
+help-html-output = { "  -H baseHREF   Prints out HTML format with baseHREF as top directory." }
+help-html-title = { "  -T string     Replace the default HTML title and H1 header with string." }
+help-no-links = { "  --nolinks     Turn off hyperlinks in HTML output." }
+help-html-intro = { "  --hintro X    Use file X as the HTML intro." }
+help-html-outro = { "  --houtro X    Use file X as the HTML outro." }
+help-hyperlink = { "  --hyperlink   Turn on OSC 8 terminal hyperlinks." }
+help-scheme = { "  --scheme X    Set OSC 8 hyperlink scheme, default file://" }
+help-authority = { "  --authority X Set OSC 8 hyperlink authority/hostname." }
+help-input-options = { "  ------- Input options -------" }
+help-from-file = { "  --fromfile    Reads paths from files (.=stdin)" }
+help-from-tabfile = { "  --fromtabfile Reads trees from tab indented files (.=stdin)" }
+help-fflinks = { "  --fflinks     Process link information when using --fromfile." }
+help-misc-options = { "  ------- Miscellaneous options -------" }
+help-opt-toggle = { "  --opt-toggle  Enable option toggling." }
+help-print-version = { "  --version     Print version and exit." }
+help-print-help = { "  --help        Print usage and this help message and exit." }
+help-options-terminator = { "  --            Options processing terminator." }
