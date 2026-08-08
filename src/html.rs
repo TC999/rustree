@@ -157,10 +157,10 @@ fn html_print(s: &str) {
 }
 
 // === 原 C 函数：int html_printinfo(char *dirname, struct _info *file, int level) ===
-pub fn html_printinfo(_dirname: &str, file: Option<&Info>, level: i32) -> i32 {
+pub fn html_printinfo(_dirname: &str, file: Option<&mut Info>, level: i32) -> i32 {
     // C: char info[512]; fillinfo(info, file);
     let mut info = String::new();
-    fillinfo(&mut info, file);
+    fillinfo(&mut info, file.as_deref());
     // unsafe：读取全局 FLAG/SP
     unsafe {
         if FLAG.metafirst {
@@ -370,4 +370,5 @@ mod tests {
         });
     }
 }
+
 

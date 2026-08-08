@@ -121,7 +121,7 @@ pub fn json_outtro() {
 }
 
 // === 原 C 函数：int json_printinfo(char *dirname, struct _info *file, int level) ===
-pub fn json_printinfo(_dirname: &str, file: Option<&Info>, level: i32) -> i32 {
+pub fn json_printinfo(_dirname: &str, file: Option<&mut Info>, level: i32) -> i32 {
     // unsafe：读取全局 FLAG
     unsafe {
         // C: if (!flag.noindent) json_indent(level);
@@ -331,3 +331,4 @@ mod tests {
         });
     }
 }
+

@@ -24,6 +24,7 @@ mod strverscmp;
 mod tree;
 mod unix;
 mod util;
+mod xml;
 
 // =====================================================================
 // 以下两函数提前翻译自 tree.c（patmatch/cond_lower），

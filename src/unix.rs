@@ -15,11 +15,11 @@ use crate::{fillinfo, indent, printit, psize, Ftype};
 static mut INFO: String = String::new();
 
 // === 原 C 函数：int unix_printinfo(char *dirname, struct _info *file, int level) ===
-pub fn unix_printinfo(_dirname: &str, file: Option<&Info>, level: i32) -> i32 {
+pub fn unix_printinfo(_dirname: &str, file: Option<&mut Info>, level: i32) -> i32 {
     // unsafe：读写全局 INFO/FLAG 并输出
     unsafe {
         // C: fillinfo(info, file);
-        fillinfo(&mut INFO, file);
+        fillinfo(&mut INFO, file.as_deref());
         if FLAG.metafirst {
             // C: if (info[0] == '[') fprintf(outfile, "%s  ", info);
             if INFO.starts_with('[') {
@@ -332,4 +332,5 @@ mod tests {
         });
     }
 }
+
 

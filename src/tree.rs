@@ -290,7 +290,8 @@ pub struct Totals {
 pub struct ListingCalls {
     pub intro: fn(), // 输出开始
     pub outtro: fn(), // 输出结束
-    pub printinfo: fn(dirname: &str, file: Option<&Info>, level: i32) -> i32, // 打印条目元数据
+    // file 为 &mut：xml_printinfo 会设置 file->tag（C 中 file 指针可变）
+    pub printinfo: fn(dirname: &str, file: Option<&mut Info>, level: i32) -> i32, // 打印条目元数据
     pub printfile: fn(dirname: &str, filename: &str, file: Option<&Info>, descend: i32) -> i32, // 打印条目名
     pub error: fn(error: &str) -> i32, // 打印错误
     pub newline: fn(file: Option<&Info>, level: i32, postdir: i32, needcomma: bool), // 换行

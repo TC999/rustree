@@ -119,7 +119,7 @@ pub fn emit_tree(dirname: &mut [String], needfulltree: bool) {
         }
 
         // C: lc.printinfo(dirname[i], info, 0);
-        (lc().printinfo)(&dirname[i], info.as_ref(), 0);
+        (lc().printinfo)(&dirname[i], info.as_mut(), 0);
 
         // C: needsclosed = lc.printfile(dirname[i], dirname[i], info, (dir != NULL) || (!dir && n));
         let needsclosed = (lc().printfile)(
@@ -231,7 +231,7 @@ pub fn listdir(dirname: &str, mut dir: Vec<Info>, lev: i32, dev: u64, hasfulltre
     while idx < dir.len() {
         // C: lc.printinfo(dirname, *dir, lev);
         // C: lc.printinfo(dirname, *dir, lev);（*dir 非 NULL → Some）
-        (lc().printinfo)(dirname, Some(&dir[idx]), lev);
+        (lc().printinfo)(dirname, Some(&mut dir[idx]), lev);
 
         // C: namelen/namemax 检查与 path 构建（Rust 的 String 动态分配，无需 xrealloc）
         let path = if es {
@@ -447,7 +447,7 @@ mod tests {
         *REPORTED.lock().unwrap_or_else(|e| e.into_inner()) = Some(t);
     }
     // 空操作回调（unix 输出实现在 unix.rs，尚未翻译；此处仅验证遍历逻辑）
-    fn test_printinfo(_d: &str, _f: Option<&Info>, _l: i32) -> i32 {
+    fn test_printinfo(_d: &str, _f: Option<&mut Info>, _l: i32) -> i32 {
         0
     }
     fn test_printfile(_d: &str, _f: &str, _i: Option<&Info>, _desc: i32) -> i32 {
@@ -542,5 +542,6 @@ mod tests {
         std::fs::remove_dir_all(&tmp).ok();
     }
 }
+
 
 
