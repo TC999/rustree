@@ -18,7 +18,7 @@ libc = "0.2"
 unic-langid = "0.9"
 
 [[bin]]
-name = "tree"
+name = "rt"
 path = "src/main.rs"
 
 [profile.release]

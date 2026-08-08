@@ -204,7 +204,7 @@ mod tests {
         with_lang("en", || {
             assert_eq!(
                 crate::tr!("invalid-option", "arg" => "xyz"),
-                "tree: Invalid argument `xyz'."
+                "rt: Invalid argument `xyz'."
             );
         });
     }
@@ -214,7 +214,7 @@ mod tests {
         with_lang("zh-CN", || {
             assert_eq!(
                 crate::tr!("invalid-option", "arg" => "xyz"),
-                "tree: 无效参数 `xyz'。"
+                "rt: 无效参数 `xyz'。"
             );
         });
     }

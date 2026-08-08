@@ -1,22 +1,22 @@
-## 英文（默认）语言包 —— tree 命令（rustree）
+## 英文（默认）语言包 —— rt 命令（rustree）
 ## 由 fluent 加载；控制字符 \u0008（bold）、\u000C（italic）、\r（endcolor）
 ## 由 color::fancy 解释，对应原 C 的 \b / \f / \r。
 
 ## ---- 错误消息 ----
 
-invalid-option-char = tree: Invalid argument -`{ $char }'.
-invalid-option = tree: Invalid argument `{ $arg }'.
-missing-option-arg = tree: Missing argument to -{ $opt } option.
-invalid-level = tree: Invalid level, must be greater than 0.
-missing-long-arg-eq = tree: Missing argument to { $prefix }=
-missing-long-arg = tree: Missing argument to { $prefix }
-invalid-sort = tree: Sort type '{ $arg }' not valid, should be one of: { $list }
-load-gitignore-fail = tree: Could not load gitignore file
-load-infofile-fail = tree: Could not load infofile
+invalid-option-char = rt: Invalid argument -`{ $char }'.
+invalid-option = rt: Invalid argument `{ $arg }'.
+missing-option-arg = rt: Missing argument to -{ $opt } option.
+invalid-level = rt: Invalid level, must be greater than 0.
+missing-long-arg-eq = rt: Missing argument to { $prefix }=
+missing-long-arg = rt: Missing argument to { $prefix }
+invalid-sort = rt: Sort type '{ $arg }' not valid, should be one of: { $list }
+load-gitignore-fail = rt: Could not load gitignore file
+load-infofile-fail = rt: Could not load infofile
 get-hostname-fail = Unable to get hostname, using 'localhost'.
 error-opening-dir = error opening dir
-error-opening-file = tree: Error opening { $path } for reading.
-invalid-filename = tree: invalid filename '{ $f }'
+error-opening-file = rt: Error opening { $path } for reading.
+invalid-filename = rt: invalid filename '{ $f }'
 filelimit-exceeded = { $n } entries exceeds filelimit, not opening dir
 recursive-not-followed = recursive, not followed
 valid-charsets = Valid charsets include:
@@ -52,13 +52,13 @@ report-dirs-du = { $size }{ $unit } used in { $dirs } { $dirs ->
 ## ---- HTML 文案 ----
 
 html-title = Directory Tree
-html-author = Made by 'tree'
+html-author = Made by 'rt'
 
 ## ---- usage / 帮助文本 ----
 ## 每行一条独立消息（纯文本，选项名与描述内联）；
 ## usage-summary 为多行（\u000A 换行、\u0009 缩进）
 
-usage-summary = { "usage: tree [-acdfghilnpqrstuvxACDFJQNUX] [-L level [-R]] [-H [-]baseHREF]\u000A\u0009[-T title] [-o filename] [-P pattern] [-I pattern] [--gitignore]\u000A\u0009[--gitfile[=]file] [--matchdirs] [--metafirst] [--ignore-case]\u000A\u0009[--nolinks] [--hintro[=]file] [--houtro[=]file] [--inodes] [--device]\u000A\u0009[--sort[=]name] [--dirsfirst] [--filesfirst] [--filelimit[=]#] [--si]\u000A\u0009[--du] [--prune] [--timefmt[=]format] [--fromfile]\u000A\u0009[--fromtabfile] [--fflinks] [--info] [--infofile[=]file] [--noreport]\u000A\u0009[--hyperlink] [--scheme[=]schema] [--authority[=]host] [--opt-toggle]\u000A\u0009[--compress[=]#] [--condense] [--version] [--help]\u000A\u0009[--] [directory ...]" }
+usage-summary = { "usage: rt [-acdfghilnpqrstuvxACDFJQNUX] [-L level [-R]] [-H [-]baseHREF]\u000A\u0009[-T title] [-o filename] [-P pattern] [-I pattern] [--gitignore]\u000A\u0009[--gitfile[=]file] [--matchdirs] [--metafirst] [--ignore-case]\u000A\u0009[--nolinks] [--hintro[=]file] [--houtro[=]file] [--inodes] [--device]\u000A\u0009[--sort[=]name] [--dirsfirst] [--filesfirst] [--filelimit[=]#] [--si]\u000A\u0009[--du] [--prune] [--timefmt[=]format] [--fromfile]\u000A\u0009[--fromtabfile] [--fflinks] [--info] [--infofile[=]file] [--noreport]\u000A\u0009[--hyperlink] [--scheme[=]schema] [--authority[=]host] [--opt-toggle]\u000A\u0009[--compress[=]#] [--condense] [--version] [--help]\u000A\u0009[--] [directory ...]" }
 help-listing-options = { "  ------- Listing options -------" }
 help-all-files = { "  -a            All files are listed." }
 help-list-dirs-only = { "  -d            List directories only." }
@@ -66,7 +66,7 @@ help-follow-symlinks = { "  -l            Follow symbolic links like directories
 help-print-full-path = { "  -f            Print the full path prefix for each file." }
 help-stay-on-fs = { "  -x            Stay on current filesystem only." }
 help-descend-level = { "  -L level      Descend only level directories deep." }
-help-rerun-tree = { "  -R            Rerun tree when max dir level reached." }
+help-rerun-tree = { "  -R            Rerun rt when max dir level reached." }
 help-list-match-pattern = { "  -P pattern    List only those files that match the pattern given." }
 help-exclude-match-pattern = { "  -I pattern    Do not list files that match the given pattern." }
 help-filter-gitignore = { "  --gitignore   Filter by using .gitignore files." }

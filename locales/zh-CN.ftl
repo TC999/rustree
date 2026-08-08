@@ -1,22 +1,22 @@
-## 简体中文语言包 —— tree 命令（rustree）
+## 简体中文语言包 —— rt 命令（rustree）
 ## 由 fluent 加载；控制字符 \u0008（bold）、\u000C（italic）、\r（endcolor）
 ## 由 color::fancy 解释，对应原 C 的 \b / \f / \r。
 
 ## ---- 错误消息 ----
 
-invalid-option-char = tree: 无效参数 -`{ $char }'。
-invalid-option = tree: 无效参数 `{ $arg }'。
-missing-option-arg = tree: 缺少 -{ $opt } 选项的参数。
-invalid-level = tree: 无效层级，必须大于 0。
-missing-long-arg-eq = tree: 缺少 { $prefix }= 的参数
-missing-long-arg = tree: 缺少 { $prefix } 的参数
-invalid-sort = tree: 排序类型 '{ $arg }' 无效，应为以下之一：{ $list }
-load-gitignore-fail = tree: 无法加载 gitignore 文件
-load-infofile-fail = tree: 无法加载 infofile
+invalid-option-char = rt: 无效参数 -`{ $char }'。
+invalid-option = rt: 无效参数 `{ $arg }'。
+missing-option-arg = rt: 缺少 -{ $opt } 选项的参数。
+invalid-level = rt: 无效层级，必须大于 0。
+missing-long-arg-eq = rt: 缺少 { $prefix }= 的参数
+missing-long-arg = rt: 缺少 { $prefix } 的参数
+invalid-sort = rt: 排序类型 '{ $arg }' 无效，应为以下之一：{ $list }
+load-gitignore-fail = rt: 无法加载 gitignore 文件
+load-infofile-fail = rt: 无法加载 infofile
 get-hostname-fail = 无法获取主机名，使用 'localhost'。
 error-opening-dir = 打开目录出错
-error-opening-file = tree: 打开 { $path } 读取时出错。
-invalid-filename = tree: 无效文件名 '{ $f }'
+error-opening-file = rt: 打开 { $path } 读取时出错。
+invalid-filename = rt: 无效文件名 '{ $f }'
 filelimit-exceeded = { $n } 个条目超过 filelimit，不打开目录
 recursive-not-followed = 递归，不跟随
 valid-charsets = 有效字符集包括：
@@ -33,13 +33,13 @@ report-dirs-du = 共 { $dirs } 个目录，占用 { $size }{ $unit }
 ## ---- HTML 文案 ----
 
 html-title = 目录树
-html-author = 由 'tree' 生成
+html-author = 由 'rt' 生成
 
 ## ---- usage / 帮助文本 ----
 ## 每行一条独立消息（纯文本，选项名与描述内联）；
 ## usage-summary 为多行（\u000A 换行、\u0009 缩进）
 
-usage-summary = { "用法：tree [-acdfghilnpqrstuvxACDFJQNUX] [-L 层级 [-R]] [-H [-]基本HREF]\u000A\u0009[-T 标题] [-o 文件名] [-P 模式] [-I 模式] [--gitignore]\u000A\u0009[--gitfile[=]文件] [--matchdirs] [--metafirst] [--ignore-case]\u000A\u0009[--nolinks] [--hintro[=]文件] [--houtro[=]文件] [--inodes] [--device]\u000A\u0009[--sort[=]名称] [--dirsfirst] [--filesfirst] [--filelimit[=]#] [--si]\u000A\u0009[--du] [--prune] [--timefmt[=]格式] [--fromfile]\u000A\u0009[--fromtabfile] [--fflinks] [--info] [--infofile[=]文件] [--noreport]\u000A\u0009[--hyperlink] [--scheme[=]方案] [--authority[=]主机] [--opt-toggle]\u000A\u0009[--compress[=]#] [--condense] [--version] [--help]\u000A\u0009[--] [目录 ...]" }
+usage-summary = { "用法：rt [-acdfghilnpqrstuvxACDFJQNUX] [-L 层级 [-R]] [-H [-]基本HREF]\u000A\u0009[-T 标题] [-o 文件名] [-P 模式] [-I 模式] [--gitignore]\u000A\u0009[--gitfile[=]文件] [--matchdirs] [--metafirst] [--ignore-case]\u000A\u0009[--nolinks] [--hintro[=]文件] [--houtro[=]文件] [--inodes] [--device]\u000A\u0009[--sort[=]名称] [--dirsfirst] [--filesfirst] [--filelimit[=]#] [--si]\u000A\u0009[--du] [--prune] [--timefmt[=]格式] [--fromfile]\u000A\u0009[--fromtabfile] [--fflinks] [--info] [--infofile[=]文件] [--noreport]\u000A\u0009[--hyperlink] [--scheme[=]方案] [--authority[=]主机] [--opt-toggle]\u000A\u0009[--compress[=]#] [--condense] [--version] [--help]\u000A\u0009[--] [目录 ...]" }
 help-listing-options = { "  ------- 列出选项 -------" }
 help-all-files = { "  -a            列出所有文件。" }
 help-list-dirs-only = { "  -d            只列出目录。" }
@@ -47,7 +47,7 @@ help-follow-symlinks = { "  -l            像目录一样跟随符号链接。" 
 help-print-full-path = { "  -f            为每个文件打印完整路径前缀。" }
 help-stay-on-fs = { "  -x            仅停留在当前文件系统。" }
 help-descend-level = { "  -L 层级      只深入 层级 层目录。" }
-help-rerun-tree = { "  -R            到达最大目录层级时重新运行 tree。" }
+help-rerun-tree = { "  -R            到达最大目录层级时重新运行 rt。" }
 help-list-match-pattern = { "  -P 模式    只列出与给定模式匹配的文件。" }
 help-exclude-match-pattern = { "  -I 模式    不列出与给定模式匹配的文件。" }
 help-filter-gitignore = { "  --gitignore   使用 .gitignore 文件过滤。" }

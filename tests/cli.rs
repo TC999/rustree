@@ -1,7 +1,7 @@
 // 集成测试：验证编译出的 tree 二进制的基本行为。
 // 对应翻译计划"步骤 3：编写 tests/ 集成测试对照原 tree 输出"。
 // 不使用外部 crate，通过 std::process::Command 直接运行二进制
-//（env!("CARGO_BIN_EXE_tree") 由 cargo 注入编译产物的路径）。
+//（env!("CARGO_BIN_EXE_rt") 由 cargo 注入编译产物的路径）。
 
 use std::path::Path;
 use std::process::Command;
@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static FIXTURE_SEQ: AtomicU64 = AtomicU64::new(0);
 
 fn run_in(args: &[&str], cwd: &Path) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_tree"))
+    let out = Command::new(env!("CARGO_BIN_EXE_rt"))
         .args(args)
         // 移除 locale 环境变量：测试断言固定英文输出（i18n 检测到中文 locale 会输出中文）
         .env_remove("LANG")
@@ -92,7 +92,7 @@ fn test_gitignore_filter() {
 #[test]
 fn test_version_flag() {
     let out = run_in(&["--version"], Path::new("."));
-    assert!(out.starts_with("tree v"), "版本输出错误：{}", out);
+    assert!(out.starts_with("rt v"), "版本输出错误：{}", out);
 }
 
 #[test]
@@ -130,7 +130,7 @@ fn test_output_to_file() {
 
 #[test]
 fn test_invalid_option() {
-    let out = Command::new(env!("CARGO_BIN_EXE_tree"))
+    let out = Command::new(env!("CARGO_BIN_EXE_rt"))
         .arg("-Z")
         // 移除 locale：断言固定英文错误消息
         .env_remove("LANG")

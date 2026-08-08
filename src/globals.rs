@@ -243,10 +243,11 @@ pub static FTYPE: [&str; 8] = [
 pub static FMT: [u8; 8] = [b'-', b'd', b'l', b'c', b'b', b's', b'p', b'?'];
 
 // C: char *version = "$Version: $ tree v2.3.2 %s 1996 - 2026 ... $";
-pub static VERSION: &str = "$Version: $ tree v2.3.2 %s 1996 - 2026 by Steve Baker, Thomas Moore, Francesc Rocher, Florian Sesser, Kyosuke Tokoro $";
+// 程序已更名为 rt（与原始 tree 命令区分），版本字符串同步更新
+pub static VERSION: &str = "$Version: $ rt v2.3.2 %s 1996 - 2026 by Steve Baker, Thomas Moore, Francesc Rocher, Florian Sesser, Kyosuke Tokoro $";
 
 // C: char *hversion = "\t\t tree v2.3.2 %s ...";（HTML 输出版本脚注，html.c 引用）
-pub static HVERSION: &str = "\t\t tree v2.3.2 %s 1996 - 2026 by Steve Baker and Thomas Moore <br>\n\
+pub static HVERSION: &str = "\t\t rt v2.3.2 %s 1996 - 2026 by Steve Baker and Thomas Moore <br>\n\
 \t\t HTML output hacked and copyleft %s 1998 by Francesc Rocher <br>\n\
 \t\t JSON output hacked and copyleft %s 2014 by Florian Sesser <br>\n\
 \t\t Charsets / OS/2 support %s 2001 by Kyosuke Tokoro\n";
