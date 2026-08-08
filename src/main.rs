@@ -13,6 +13,7 @@
 #![allow(static_mut_refs)]
 
 mod color;
+mod file;
 mod filter;
 mod globals;
 mod hash;
