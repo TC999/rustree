@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        type: string
+        required: true
+        description: "发行版本"
+      name:
+        type: string
+        required: true
+        description: "发行版名称"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-windows:
+
+    runs-on: windows-2022
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build
+      run: cargo build --release
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v7.0.1
+      with:
+        name: windows
+        path: |
+          target/release/locales
+          target/release/rt.exe
+          
+  build-linux:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build
+      run: cargo build --release
+    - name: Copy shell script
+      run: |
+        chmod +x *.sh
+        cp *.sh target/release
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v7.0.1
+      with:
+        name: linux
+        path: |
+          target/release/locales
+          target/release/rt
+          target/release/*.sh
+  build-dpkg:
+      runs-on: ubuntu-latest
+
+      steps:
+      - uses: actions/checkout@v4
+      - run: cargo install cargo-deb
+      - name: Build
+        run: cargo deb
+      - name: Upload a Build Artifact
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: debian
+          path: target/debian/*.deb
+
+  release:
+    name: 发行
+    needs: [build-linux, build-windows, build-dpkg]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 下载文件
+        uses: actions/download-artifact@v4
+        with:
+          path: .
+      
+      - name: 重新压缩(Linux)
+        run: |
+          cd linux && zip -r "../rustree-linux.zip" .
+    
+      - name: 重新压缩(Windows)
+        run: |
+          cd windows && zip -r "../rustree-windows.zip" .
+
+      - name: 移动文件(Debian 包)
+        run: |
+          mv debian/*.deb .
+
+      - name: 自动发布发行版
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ inputs.name }}
+          tag_name: ${{ inputs.tag }}
+          draft: false
+          make_latest: true
+          files: |
+            rustree-linux.zip
+            rustree-windows.zip
+            *.deb
