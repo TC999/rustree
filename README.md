@@ -1,6 +1,6 @@
 # Rustree（rt, rust + tree）
 
-English | 简体中文
+English | [简体中文](README.zh.md)
 
 **rustree** is a handy little utility to display a tree view of folders that I just rewrite with Rust. Original version [here][c-tree]. 100% compatible with the original tree command, and I just add the i18n.
 
