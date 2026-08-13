@@ -20,6 +20,13 @@ use std::path::PathBuf;
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+
+    // 把包名作为编译时常量导出，供运行时 i18n 使用（非 Windows 下查找 /usr/share/{包名}/locales）
+    #[cfg(not(target_os = "windows"))]
+    {
+        let pkg_name = env::var("CARGO_PKG_NAME").unwrap_or_else(|_| "rustree".to_string());
+        println!("cargo:rustc-env=LOCALES_PACKAGE_NAME={}", pkg_name);
+    }
     let src = manifest_dir.join("locales");
 
     if !src.is_dir() {
