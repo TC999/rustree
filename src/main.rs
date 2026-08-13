@@ -1222,7 +1222,7 @@ pub fn usage(n: i32) {
     }
     // 逐行输出帮助文本（每行一条消息，无 fancy 控制字符，纯文本）
     for msg in USAGE_HELP_LINES {
-        let line = crate::i18n::tr(msg, &[]);
+        let line = crate::i18n::tr(msg, &[], Vec::new());
         crate::color::fancy(&mut std::io::stdout(), &line);
         // 每条消息一行：消息值不含换行，输出端补
         std::io::Write::write_all(&mut std::io::stdout(), b"\n").ok();
