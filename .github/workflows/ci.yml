@@ -34,7 +34,7 @@ jobs:
       run: cargo build --release
     - name: Copy shell script
       run: |
-        cp -r *.sh /target/release/
+        cp -r *.sh /target/release
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v7.0.1
       with:
