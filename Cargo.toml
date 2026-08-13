@@ -23,3 +23,18 @@ path = "src/main.rs"
 
 [profile.release]
 opt-level = 2
+
+[package.metadata.deb]
+maintainer = "TC999 <88823709+TC999@users.noreply.github.com>"
+maintainer-scripts = "debian"
+section = "utils"
+priority = "optional"
+depends = ""
+assets = [
+  # 把二进制和 locales 放到 /usr/bin/rt
+  ["target/release/rt", "/usr/bin/rt", "0755"],
+  ["target/release/locales/*", "/usr/share/rustree/locales/", "0644"],
+  # 可选：把 README 放到文档目录
+  ["README.md", "/usr/share/doc/rustree/README.md", "0644"],
+  ["LICENSE", "/usr/share/doc/rustree/LICENSE", "0644"],
+]
