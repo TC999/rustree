@@ -204,15 +204,17 @@ pub fn pop_infostack() {
 // === 原 C 函数：struct comment *infocheck(const char *path, const char *name, int top, bool isdir) ===
 /// 若路径/名称匹配某个 .info 注释块的模式则返回该注释块。
 /// top != 0 表示调用时目录内存在 .info 文件（允许按 name 匹配，仅对第一个 infofile 生效）。
-/// C 返回指向栈中对象的指针；Rust 返回 &'static Comment（对象存活于
-/// static mut 栈中，程序结束前有效，语义一致）。
-pub fn infocheck(path: &str, name: &str, top: i32, isdir: bool) -> Option<&'static Comment> {
+/// C 返回指向栈中对象的指针；Rust 返回借用（生命周期 'a 由调用方约束，
+/// 不再伪造 'static——对象位于全局信息栈中，调用方必须在使用后立即释放
+/// 引用（现有调用点均为立即 clone desc 后丢弃））。
+pub fn infocheck<'a>(path: &str, name: &str, top: i32, isdir: bool) -> Option<&'a Comment> {
     let mut top = top != 0;
 
-    // unsafe：遍历全局信息栈 INFOSTACK 并返回其内部对象的 'static 引用
+    // unsafe：遍历全局信息栈 INFOSTACK，把栈内对象引用以调用方给定的
+    // 生命周期 'a 返回（栈对象存活期由调用约定保证，见函数文档）
     unsafe {
         // C: if (inf == NULL) return NULL;（while let 处理：栈空则不进入循环）
-        let mut inf = INFOSTACK.as_deref();
+        let mut inf: Option<&'a Infofile> = INFOSTACK.as_deref();
         while let Some(inf_node) = inf {
             // C: int fpos = sprintf(xpattern, "%s/", inf->path);
             // 复用全局工作缓冲 XPATTERN（对应 C 的 xpattern），避免每次匹配调用分配
@@ -229,18 +231,18 @@ pub fn infocheck(path: &str, name: &str, top: i32, isdir: bool) -> Option<&'stat
                 while let Some(pat) = p {
                     // C: if (patmatch(path, p->pattern, isdir) == 1) return com;
                     if patmatch(path.as_bytes(), pat.pattern.as_bytes(), isdir) == 1 {
-                        return Some(&*(com_node as *const Comment));
+                        return Some(com_node);
                     }
                     // C: if (top && patmatch(name, p->pattern, isdir) == 1) return com;
                     if top && patmatch(name.as_bytes(), pat.pattern.as_bytes(), isdir) == 1 {
-                        return Some(&*(com_node as *const Comment));
+                        return Some(com_node);
                     }
 
                     // C: sprintf(xpattern + fpos, "%s", p->pattern);
                     //     if (patmatch(path, xpattern, isdir) == 1) return com;
                     crate::globals::XPATTERN.push_str(&pat.pattern);
                     if patmatch(path.as_bytes(), crate::globals::XPATTERN.as_bytes(), isdir) == 1 {
-                        return Some(&*(com_node as *const Comment));
+                        return Some(com_node);
                     }
                     crate::globals::XPATTERN.truncate(fpos);
 
