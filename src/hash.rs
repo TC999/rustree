@@ -269,52 +269,67 @@ pub fn findino(inode: u64, device: u64) -> bool {
 mod tests {
     use super::*;
 
+    // 哈希表（UTABLE/GTABLE/ITABLE/STRTABLE）为全局 static mut，
+    // cargo test 多线程并行时须串行化访问（与 filter.rs 的 STACK_LOCK 同理）
+    fn with_lock<T>(f: impl FnOnce() -> T) -> T {
+        let _g = crate::globals::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        f()
+    }
+
     #[test]
     fn test_saveino_findino() {
-        // 初始未记录
-        assert!(!findino(100, 200));
-        saveino(100, 200);
-        assert!(findino(100, 200));
-        // 相同 inode 不同 device 不算命中
-        assert!(!findino(100, 201));
-        // 再次保存同记录不产生重复
-        saveino(100, 200);
-        assert!(findino(100, 200));
-        // 不同 inode
-        assert!(!findino(101, 200));
-        // 哈希碰撞（不同桶）互不影响
-        saveino(300, 1);
-        assert!(findino(300, 1));
-        assert!(!findino(44, 1));
+        with_lock(|| {
+            // 初始未记录
+            assert!(!findino(100, 200));
+            saveino(100, 200);
+            assert!(findino(100, 200));
+            // 相同 inode 不同 device 不算命中
+            assert!(!findino(100, 201));
+            // 再次保存同记录不产生重复
+            saveino(100, 200);
+            assert!(findino(100, 200));
+            // 不同 inode
+            assert!(!findino(101, 200));
+            // 哈希碰撞（不同桶）互不影响
+            saveino(300, 1);
+            assert!(findino(300, 1));
+            assert!(!findino(44, 1));
+        });
     }
 
     #[test]
     fn test_uidtoname_consistent() {
-        // 同一 uid 重复查询应返回相同名称（验证缓存命中路径）
-        let a = uidtoname(12345);
-        let b = uidtoname(12345);
-        assert_eq!(a, b);
-        // 未命中的 uid 在无 getpwuid 的平台回退为数字字符串
-        assert_eq!(uidtoname(12345), b);
+        with_lock(|| {
+            // 同一 uid 重复查询应返回相同名称（验证缓存命中路径）
+            let a = uidtoname(12345);
+            let b = uidtoname(12345);
+            assert_eq!(a, b);
+            // 未命中的 uid 在无 getpwuid 的平台回退为数字字符串
+            assert_eq!(uidtoname(12345), b);
+        });
     }
 
     #[test]
     fn test_gidtoname_consistent() {
-        let a = gidtoname(23456);
-        let b = gidtoname(23456);
-        assert_eq!(a, b);
+        with_lock(|| {
+            let a = gidtoname(23456);
+            let b = gidtoname(23456);
+            assert_eq!(a, b);
+        });
     }
 
     #[cfg(target_os = "linux")]
     #[test]
     fn test_strhash() {
-        // 驻留：同一字符串返回相同值
-        assert_eq!(strhash("abc"), strhash("abc"));
-        assert_eq!(strhash(""), strhash(""));
-        // 不同字符串
-        let a = strhash("aaa");
-        let b = strhash("aab");
-        assert_ne!(a, b);
+        with_lock(|| {
+            // 驻留：同一字符串返回相同值
+            assert_eq!(strhash("abc"), strhash("abc"));
+            assert_eq!(strhash(""), strhash(""));
+            // 不同字符串
+            let a = strhash("aaa");
+            let b = strhash("aab");
+            assert_ne!(a, b);
+        });
     }
 }
 
