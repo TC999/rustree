@@ -326,8 +326,11 @@ pub fn filtercheck(path: &str, name: &str, isdir: i32) -> bool {
                 None => break,
             };
             // C: int fpos = sprintf(xpattern, "%s/", ig->path);
-            let mut xpattern = format!("{}/", ig_node.path);
-            let fpos = xpattern.len();
+            // 复用全局工作缓冲 XPATTERN（对应 C 的 xpattern），避免每次匹配调用分配
+            crate::globals::XPATTERN.clear();
+            crate::globals::XPATTERN.push_str(&ig_node.path);
+            crate::globals::XPATTERN.push('/');
+            let fpos = crate::globals::XPATTERN.len();
 
             let mut p = ig_node.remove.as_deref();
             while let Some(pat) = p {
@@ -339,13 +342,13 @@ pub fn filtercheck(path: &str, name: &str, isdir: i32) -> bool {
                     }
                 } else {
                     // C: sprintf(xpattern + fpos, "%s", p->pattern);
-                    xpattern.push_str(&pat.pattern);
+                    crate::globals::XPATTERN.push_str(&pat.pattern);
                     // C: if (patmatch(path, xpattern, isdir) == 1) { filter = true; break; }
-                    if patmatch(path.as_bytes(), xpattern.as_bytes(), isdir_b) == 1 {
+                    if patmatch(path.as_bytes(), crate::globals::XPATTERN.as_bytes(), isdir_b) == 1 {
                         filter = true;
                         break;
                     }
-                    xpattern.truncate(fpos);
+                    crate::globals::XPATTERN.truncate(fpos);
                 }
                 p = pat.next.as_deref();
             }
@@ -363,8 +366,11 @@ pub fn filtercheck(path: &str, name: &str, isdir: i32) -> bool {
         let mut ig = FILTERSTACK.as_deref();
         while let Some(ig_node) = ig {
             // C: int fpos = sprintf(xpattern, "%s/", ig->path);
-            let mut xpattern = format!("{}/", ig_node.path);
-            let fpos = xpattern.len();
+            // 复用全局工作缓冲 XPATTERN（对应 C 的 xpattern），避免每次匹配调用分配
+            crate::globals::XPATTERN.clear();
+            crate::globals::XPATTERN.push_str(&ig_node.path);
+            crate::globals::XPATTERN.push('/');
+            let fpos = crate::globals::XPATTERN.len();
 
             let mut p = ig_node.reverse.as_deref();
             while let Some(pat) = p {
@@ -375,12 +381,12 @@ pub fn filtercheck(path: &str, name: &str, isdir: i32) -> bool {
                     }
                 } else {
                     // C: sprintf(xpattern + fpos, "%s", p->pattern);
-                    xpattern.push_str(&pat.pattern);
+                    crate::globals::XPATTERN.push_str(&pat.pattern);
                     // C: if (patmatch(path, xpattern, isdir) == 1) return false;
-                    if patmatch(path.as_bytes(), xpattern.as_bytes(), isdir_b) == 1 {
+                    if patmatch(path.as_bytes(), crate::globals::XPATTERN.as_bytes(), isdir_b) == 1 {
                         return false;
                     }
-                    xpattern.truncate(fpos);
+                    crate::globals::XPATTERN.truncate(fpos);
                 }
                 p = pat.next.as_deref();
             }
@@ -394,7 +400,6 @@ pub fn filtercheck(path: &str, name: &str, isdir: i32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tree::{Flags, S_IFDIR, S_IFREG};
     use std::sync::Mutex;
 
     // 过滤测试共享全局 FILTERSTACK，必须串行执行。
@@ -507,15 +512,6 @@ mod tests {
         push_patterns(&[("node_modules/", 1)], &[]);
         assert!(filtercheck("/tmp/node_modules", "node_modules", 1));
         clear_stack();
-    }
-
-    // 让 FLAG 常量在测试中被引用，避免未使用警告
-    #[test]
-    fn test_flags_accessible() {
-        let _f: Flags = Flags::new();
-        let _m = S_IFDIR;
-        let _r = S_IFREG;
-        assert!(true);
     }
 }
 

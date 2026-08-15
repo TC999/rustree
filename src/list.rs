@@ -240,17 +240,20 @@ pub fn listdir(dirname: &str, mut dir: Vec<Info>, lev: i32, dev: u64, hasfulltre
         } else {
             format!("{}/{}", dirname, dir[idx].name)
         };
+        // C: descend = 0; err = NULL; newpath = path;
+        let newpath = path;
         // C: if (flag.f) filename = path; else filename = (*dir)->name;
-        let filename = if unsafe { FLAG.f } {
-            path.clone()
+        // printfile 仅借用 filename：flag.f 时借用 newpath（持有 path），否则
+        // 在 printfile 调用点直接借用 dir[idx].name——避免提前持有 dir 的不可变
+        // 借用挡住后续 child.take()/err.take() 的可变借用
+        let filename: Option<&str> = if unsafe { FLAG.f } {
+            Some(&newpath)
         } else {
-            dir[idx].name.clone()
+            None
         };
 
-        // C: descend = 0; err = NULL; newpath = path;
         let mut descend = 0;
         let mut err: Option<String> = None;
-        let newpath = path;
 
         // C: if ((*dir)->isdir)
         if dir[idx].isdir {
@@ -361,7 +364,7 @@ pub fn listdir(dirname: &str, mut dir: Vec<Info>, lev: i32, dev: u64, hasfulltre
         // C: needsclosed = lc.printfile(dirname, filename, *dir, descend + htmldescend + (flag.J && errors));
         let needsclosed = (lc().printfile)(
             dirname,
-            &filename,
+            filename.unwrap_or(&dir[idx].name),
             Some(&dir[idx]),
             descend + htmldescend + if unsafe { FLAG.J } && unsafe { ERRORS } != 0 { 1 } else { 0 },
         );

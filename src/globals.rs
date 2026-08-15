@@ -191,8 +191,8 @@ pub static mut MAXDIRS: usize = 0;
 pub static mut ERRORS: i32 = 0;
 
 // C: char xpattern[PATH_MAX];（跨函数复用的工作缓冲区）
-// Rust 实现以局部 String 替代，声明保留以对应 C 全局。
-#[allow(dead_code)]
+// filtercheck/infocheck 复用此全局缓冲拼接"基路径 + 模式"字符串，
+// 避免每次匹配调用都新建 String（对应 C 中同一全局缓冲的复用语义）。
 pub static mut XPATTERN: String = String::new();
 
 // C: int mb_cur_max;（当前 locale 下多字节字符的最大字节数）

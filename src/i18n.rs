@@ -54,13 +54,13 @@ impl I18n {
             .bundle
             .format_pattern(pattern, args, &mut vec![]);
         // 剥离 Fluent 的隔离标记 U+2068 / U+2069
-        s.replace('\u{2068}', "").replace('\u{2069}', "").to_string()
+        s.replace(['\u{2068}', '\u{2069}'], "").to_string()
     }
 }
 
 // 单线程全局 i18n 句柄（与全局 OUTFILE 等 static mut 全局状态相同语义）
 pub static mut BUNDLE: Option<I18n> = None;
-pub static mut ACTIVE_LANG: &'static str = "en";
+pub static mut ACTIVE_LANG: &str = "en";
 
 // 测试专用的串行锁：防止多线程下并发写入 BUNDLE/ACTIVE_LANG
 #[cfg(test)]

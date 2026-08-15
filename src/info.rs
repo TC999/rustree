@@ -215,8 +215,11 @@ pub fn infocheck(path: &str, name: &str, top: i32, isdir: bool) -> Option<&'stat
         let mut inf = INFOSTACK.as_deref();
         while let Some(inf_node) = inf {
             // C: int fpos = sprintf(xpattern, "%s/", inf->path);
-            let mut xpattern = format!("{}/", inf_node.path);
-            let fpos = xpattern.len();
+            // 复用全局工作缓冲 XPATTERN（对应 C 的 xpattern），避免每次匹配调用分配
+            crate::globals::XPATTERN.clear();
+            crate::globals::XPATTERN.push_str(&inf_node.path);
+            crate::globals::XPATTERN.push('/');
+            let fpos = crate::globals::XPATTERN.len();
 
             // C: for(com = inf->comments; com != NULL; com = com->next)
             let mut com = inf_node.comments.as_deref();
@@ -235,11 +238,11 @@ pub fn infocheck(path: &str, name: &str, top: i32, isdir: bool) -> Option<&'stat
 
                     // C: sprintf(xpattern + fpos, "%s", p->pattern);
                     //     if (patmatch(path, xpattern, isdir) == 1) return com;
-                    xpattern.push_str(&pat.pattern);
-                    if patmatch(path.as_bytes(), xpattern.as_bytes(), isdir) == 1 {
+                    crate::globals::XPATTERN.push_str(&pat.pattern);
+                    if patmatch(path.as_bytes(), crate::globals::XPATTERN.as_bytes(), isdir) == 1 {
                         return Some(&*(com_node as *const Comment));
                     }
-                    xpattern.truncate(fpos);
+                    crate::globals::XPATTERN.truncate(fpos);
 
                     p = pat.next.as_deref();
                 }

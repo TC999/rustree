@@ -22,7 +22,11 @@ name = "rt"
 path = "src/main.rs"
 
 [profile.release]
-opt-level = 2
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+# 程序全程以 process::exit 结束（不依赖析构/栈展开），panic=abort 可减小体积
+panic = "abort"
 
 [package.metadata.deb]
 maintainer = "TC999 <88823709+TC999@users.noreply.github.com>"

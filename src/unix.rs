@@ -194,10 +194,10 @@ pub fn unix_newline(file: Option<&Info>, level: i32, postdir: i32, _needcomma: b
                 // C: for(line = 0; line < lines; line++)
                 for line in 0..lines {
                     // C: if (flag.metafirst) printf("%*s", (int)infosize, "");
-                    // 注意：C 源码此处使用 printf（写到 stdout）而非 fprintf(outfile, ...)，
-                    // 属原 C 的笔误，此处原样保留
+                    // 原 C 此处误用 printf（写到真实 stdout）；Rust 版修复为写入全局输出流
+                    // OUTFILE——否则 -o 重定向输出时注释的对齐空格会泄漏到终端而非文件
                     if FLAG.metafirst {
-                        print!("{:>width$}", "", width = infosize);
+                        out!("{:>width$}", "", width = infosize);
                     }
                     indent(level);
                     printcomment(line, lines, &file.comment[line]);
@@ -340,6 +340,32 @@ mod tests {
             // psize 输出 " 1.5k"（1500/1000=1.5k）+ " used in "
             assert!(out.contains("used in "));
             assert!(out.contains("1.5k"));
+        });
+    }
+
+    #[test]
+    fn test_unix_newline_metafirst_comment_writes_to_outfile() {
+        with_output(|buf| {
+            // unsafe：设置全局 FLAG（metafirst）与 INFO 工作缓冲（以 '[' 开头使对齐宽度生效）
+            unsafe {
+                FLAG.metafirst = true;
+                super::INFO = "[meta".to_string();
+            }
+            let ent = Info {
+                comment: vec!["note".to_string()],
+                ..Info::default()
+            };
+            unix_newline(Some(&ent), 0, 0, false);
+            let out = String::from_utf8(buf.lock().unwrap_or_else(|e| e.into_inner()).clone()).unwrap();
+            // infosize = INFO.len()+2 = 7（"[meta" 为 5 字符）：对齐空格必须写入全局输出流
+            //（-o 重定向时也在文件内），而非泄漏到真实 stdout（原 C 的 printf 笔误已修复，
+            // 回归测试锁定该行为）
+            // printcomment(0,1,"note") 输出 " { note\n"（csingle + 空格 + 内容）
+            assert_eq!(out, format!("\n{} {{ note\n", " ".repeat(7)));
+            // unsafe：清理全局工作缓冲
+            unsafe {
+                super::INFO.clear();
+            }
         });
     }
 }
