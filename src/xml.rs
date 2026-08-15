@@ -24,11 +24,12 @@ pub fn xml_indent(maxlevel: i32) {
         if FLAG.noindent {
             return;
         }
-        out!("{}", spaces[clvl]);
-        // C: for(i=0; i<maxlevel; i++)
-        for _ in 0..maxlevel {
-            out!("{}", spaces[clvl]);
+        // 先累积到局部缓冲再一次性输出（避免每层一次 out! 调用）
+        let mut buf: String = String::with_capacity(((maxlevel + 1) as usize).saturating_mul(4));
+        for _ in 0..=maxlevel {
+            buf.push_str(spaces[clvl]);
         }
+        out!("{}", buf);
     }
 }
 

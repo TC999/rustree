@@ -615,8 +615,10 @@ pub fn setoutput(filename: Option<&str>) {
         match filename {
             None => {
                 // C: if (outfile == NULL) outfile = stdout;
+                // 包一层 BufWriter：out!/outbytes! 逐段/逐字符写入时先落内存缓冲，
+                // 大幅减少对 stdout 的加锁写调用（main 退出前统一 flush，见 main）
                 if OUTFILE.is_none() {
-                    OUTFILE = Some(Box::new(std::io::stdout()));
+                    OUTFILE = Some(Box::new(std::io::BufWriter::new(std::io::stdout())));
                 }
             }
             Some(f) => {
@@ -684,58 +686,65 @@ pub fn printit(s: &str) {
         if crate::globals::MB_CUR_MAX > 1 {
             // 等价于 C 的 mbstowcs 成功路径：Rust 的 String 恒为合法 UTF-8，
             // 按字符处理（C 中 mbstowcs 失败路径在 Rust 中不可能出现）。
+            // 先累积到局部缓冲再一次性输出，避免每个字符一次 write 调用
+            let mut buf: Vec<u8> = Vec::with_capacity(s.len() + 8);
             if FLAG.Q {
-                outc!(b'"');
+                buf.push(b'"');
             }
             for ch in s.chars() {
                 // C: if (iswprint(*tp)) fprintf("%lc")；else '?' 或 "\%03o"
                 if !ch.is_control() {
-                    out!("{}", ch);
+                    let mut tmp = [0u8; 4];
+                    buf.extend_from_slice(ch.encode_utf8(&mut tmp).as_bytes());
                 } else if FLAG.q {
-                    outc!(b'?');
+                    buf.push(b'?');
                 } else {
-                    out!("\\{:03o}", ch as u32);
+                    buf.extend_from_slice(format!("\\{:03o}", ch as u32).as_bytes());
                 }
             }
             if FLAG.Q {
-                outc!(b'"');
+                buf.push(b'"');
             }
+            outbytes!(&buf);
             return;
         }
         // C: 字节路径（mb_cur_max <= 1）
+        // 先累积到局部缓冲再一次性输出，避免每个字节一次 write 调用
+        let mut buf: Vec<u8> = Vec::with_capacity(s.len() + 8);
         if FLAG.Q {
-            outc!(b'"');
+            buf.push(b'"');
         }
         for &c in s.as_bytes() {
             // C: if ((c >= 7 && c <= 13) || c == '\\' || (c == '"' && flag.Q) || (c == ' ' && !flag.Q))
             if (7..=13).contains(&c) || c == b'\\' || (c == b'"' && FLAG.Q) || (c == b' ' && !FLAG.Q)
             {
-                outc!(b'\\');
+                buf.push(b'\\');
                 if c > 13 {
-                    outc!(c);
+                    buf.push(c);
                 } else {
                     // C: putc("abtnvfr"[c-7])（\a \x08 \t \n \v \x0c \r）
-                    outc!(b"abtnvfr"[c as usize - 7]);
+                    buf.push(b"abtnvfr"[c as usize - 7]);
                 }
             } else if c.is_ascii_graphic() || c == b' ' {
                 // C: else if (isprint(c))
-                outc!(c);
+                buf.push(c);
             } else {
                 // C: else { if (flag.q) { if (mb_cur_max > 1 && c > 127) putc(c); else putc('?'); } else fprintf("\\%03o", c); }
                 if FLAG.q {
                     if crate::globals::MB_CUR_MAX > 1 && c > 127 {
-                        outc!(c);
+                        buf.push(c);
                     } else {
-                        outc!(b'?');
+                        buf.push(b'?');
                     }
                 } else {
-                    out!("\\{:03o}", c);
+                    buf.extend_from_slice(format!("\\{:03o}", c).as_bytes());
                 }
             }
         }
         if FLAG.Q {
-            outc!(b'"');
+            buf.push(b'"');
         }
+        outbytes!(&buf);
     }
 }
 
@@ -819,9 +828,11 @@ pub fn indent(maxlevel: i32) {
         let space: &[u8] = if FLAG.H { b"&nbsp;" } else { b" " };
         // C: int clvl = flag.compress_indent;（main 中已约束为 0..=2）
         let clvl = FLAG.compress_indent as usize;
+        // 先累积到局部缓冲再一次性输出（每个缩进段一次 outbytes 调用）
+        let mut buf: Vec<u8> = Vec::with_capacity((maxlevel as usize).saturating_mul(8));
         // C: if (flag.H) fprintf(outfile, "\t");
         if FLAG.H {
-            outbytes!(b"\t");
+            buf.extend_from_slice(b"\t");
         }
         // C: for(i=1; (i <= maxlevel) && dirs[i]; i++)
         let mut i = 1;
@@ -841,13 +852,14 @@ pub fn indent(maxlevel: i32) {
             } else {
                 crate::color::LINEDRAW.corner[clvl]
             };
-            outbytes!(piece);
+            buf.extend_from_slice(piece);
             // C: if (flag.remove_space != true) fprintf(outfile, "%s", space);
             if !FLAG.remove_space {
-                outbytes!(space);
+                buf.extend_from_slice(space);
             }
             i += 1;
         }
+        outbytes!(&buf);
     }
 }
 
@@ -2055,6 +2067,12 @@ fn main() {
 
     if showversion {
         print_version(true);
+        // unsafe：访问全局 OUTFILE（stdout 已包 BufWriter，exit 前需 flush 以免丢缓冲）
+        unsafe {
+            if let Some(w) = OUTFILE.as_mut() {
+                let _ = w.flush();
+            }
+        }
         std::process::exit(0);
     }
 
@@ -2112,13 +2130,12 @@ fn main() {
     crate::list::emit_tree(&mut dirname, needfulltree);
 
     // C: if (outfilename != NULL) fclose(outfile);
-    // process::exit 不运行析构函数，BufWriter 缓冲需显式 flush（等价于 fclose）
-    if outfilename.is_some() {
-        // unsafe：访问全局 OUTFILE
-        unsafe {
-            if let Some(w) = OUTFILE.as_mut() {
-                let _ = w.flush();
-            }
+    // process::exit 不运行析构函数，BufWriter（stdout 与 -o 文件）缓冲需显式
+    // flush（等价于 fclose）
+    // unsafe：访问全局 OUTFILE
+    unsafe {
+        if let Some(w) = OUTFILE.as_mut() {
+            let _ = w.flush();
         }
     }
 
