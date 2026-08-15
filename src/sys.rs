@@ -381,10 +381,11 @@ pub fn get_hostname() -> Option<String> {
     if r < 0 {
         return None;
     }
-    // unsafe：CStr::from_ptr 从 gethostname 写入的 C 缓冲区构造字符串
-    let name = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const libc::c_char) }
-        .to_string_lossy()
-        .into_owned();
+    // 防御：不依赖平台对 NUL 终止的保证——CStr::from_bytes_until_nul 只读到
+    // 第一个 NUL 或缓冲区末尾（纯 std，不越界）；极端情况下返回空串而非 UB
+    let name = std::ffi::CStr::from_bytes_until_nul(&buf)
+        .map(|c| c.to_string_lossy().into_owned())
+        .unwrap_or_default();
     Some(name)
 }
 
