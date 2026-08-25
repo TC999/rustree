@@ -54,7 +54,7 @@ fn test_basic_output() {
     // 默认按名称排序：a.txt 在前，sub 在后
     assert!(out.contains("├── a.txt"), "缺少 a.txt：\n{}", out);
     assert!(out.contains("└── sub"), "缺少 sub：\n{}", out);
-    assert!(out.contains("3 directories, 3 files"), "统计错误：\n{}", out);
+    assert!(out.contains("3 directory(s), 3 file(s)"), "统计错误：\n{}", out);
     std::fs::remove_dir_all(&tmp).ok();
 }
 
@@ -64,7 +64,7 @@ fn test_depth_limit() {
     // -L 1 只显示顶层
     let out = run_in(&["-L", "1"], &tmp);
     assert!(!out.contains("deep"), "-L 1 不应显示深层：\n{}", out);
-    assert!(out.contains("2 directories, 1 file"), "统计错误：\n{}", out);
+    assert!(out.contains("2 directory(s), 1 file(s)"), "统计错误：\n{}", out);
     std::fs::remove_dir_all(&tmp).ok();
 }
 
@@ -73,7 +73,7 @@ fn test_dir_only() {
     let tmp = make_fixture();
     let out = run_in(&["-d"], &tmp);
     assert!(!out.contains("a.txt"), "-d 不应显示文件：\n{}", out);
-    assert!(out.contains("3 directories"), "目录统计错误：\n{}", out);
+    assert!(out.contains("3 directory(s)"), "目录统计错误：\n{}", out);
     std::fs::remove_dir_all(&tmp).ok();
 }
 
@@ -85,7 +85,7 @@ fn test_gitignore_filter() {
     let out = run_in(&["--gitignore"], &tmp);
     assert!(!out.contains("sub"), "gitignore 应过滤 sub：\n{}", out);
     assert!(out.contains("a.txt"), "应保留 a.txt：\n{}", out);
-    assert!(out.contains("1 directory, 1 file"), "统计错误：\n{}", out);
+    assert!(out.contains("1 directory(s), 1 file(s)"), "统计错误：\n{}", out);
     std::fs::remove_dir_all(&tmp).ok();
 }
 
@@ -124,7 +124,7 @@ fn test_output_to_file() {
     let content = std::fs::read_to_string(&outfile).expect("输出文件应存在");
     assert!(content.contains("a.txt"), "-o 输出内容错误：\n{}", content);
     // 输出文件本身也会被遍历（与 C 一致）：3 目录（. sub deep）+ 4 文件（a out b c）
-    assert!(content.contains("3 directories, 4 files"), "-o 统计错误：\n{}", content);
+    assert!(content.contains("3 directory(s), 4 file(s)"), "-o 统计错误：\n{}", content);
     std::fs::remove_dir_all(&tmp).ok();
 }
 

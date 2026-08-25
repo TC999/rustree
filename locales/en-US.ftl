@@ -24,30 +24,12 @@ report-unit = { " bytes" }
 
 ## ---- 目录统计报告（unix_report / html_report）----
 ## 四种变体：du（--du 时含 size 前缀）与非 du；full（含文件数）与 dirs（-d 时）
-## 英文复数：变体值用完整词（directory/directories、file/files）
+## 英文名词统一用单数 + "(s)" 后缀（directory(s)、file(s)），不做单复数区分
 
-report-full = { $dirs } { $dirs ->
-        [one] directory
-       *[other] directories
-    }, { $files } { $files ->
-        [one] file
-       *[other] files
-    }
-report-full-du = { $size }{ $unit } used in { $dirs } { $dirs ->
-        [one] directory
-       *[other] directories
-    }, { $files } { $files ->
-        [one] file
-       *[other] files
-    }
-report-dirs = { $dirs } { $dirs ->
-        [one] directory
-       *[other] directories
-    }
-report-dirs-du = { $size }{ $unit } used in { $dirs } { $dirs ->
-        [one] directory
-       *[other] directories
-    }
+report-full = { $dirs } directory(s), { $files } file(s)
+report-full-du = { $size }{ $unit } used in { $dirs } directory(s), { $files } file(s)
+report-dirs = { $dirs } directory(s)
+report-dirs-du = { $size }{ $unit } used in { $dirs } directory(s)
 
 ## ---- HTML 文案 ----
 

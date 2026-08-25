@@ -317,7 +317,7 @@ mod tests {
                 size: 0,
             });
             let out = String::from_utf8(buf.lock().unwrap_or_else(|e| e.into_inner()).clone()).unwrap();
-            assert_eq!(out, "\n1 directory, 3 files\n");
+            assert_eq!(out, "\n1 directory(s), 3 file(s)\n");
         });
     }
 

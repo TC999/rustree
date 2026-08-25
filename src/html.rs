@@ -374,8 +374,8 @@ mod tests {
                 size: 0,
             });
             let out = String::from_utf8(buf.lock().unwrap_or_else(|e| e.into_inner()).clone()).unwrap();
-            assert!(out.contains("1 director"));
-            assert!(out.contains("3 files"));
+            assert!(out.contains("1 directory(s)"));
+            assert!(out.contains("3 file(s)"));
         });
     }
 }

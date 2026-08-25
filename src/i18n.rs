@@ -13,9 +13,18 @@ pub struct I18n {
 
 // 获取 locales 文件夹路径。
 // 查找顺序：
-//   1. 非 Windows 系统：/usr/share/{包名}/locales（由 pkg-config / 系统安装路径）
-//   2. 所有平台：程序所在目录下的 locales/（由 build.rs 在编译时复制而来）
+//   1. 所有平台：程序所在目录下的 locales/（由 build.rs 在编译时复制而来）
+//   2. 非 Windows 系统：/usr/share/{包名}/locales（install.sh 安装的系统路径，作为兜底）
+// 程序自带语言包优先，保证源码构建/升级后总是使用最新文案；
+// 系统安装路径仅当程序旁无 locales 时（如旧安装布局）才作为 fallback。
 fn get_locales_dir() -> PathBuf {
+    let exe_path = env::current_exe().expect("无法获取可执行文件路径");
+    let exe_dir = exe_path.parent().expect("无法获取可执行文件所在目录");
+    let local = exe_dir.join("locales");
+    if local.is_dir() {
+        return local;
+    }
+
     #[cfg(not(target_os = "windows"))]
     {
         // 包名来自 build.rs 导出的编译时常量（CARGO_PKG_NAME），不硬编码程序名
@@ -26,9 +35,7 @@ fn get_locales_dir() -> PathBuf {
         }
     }
 
-    let exe_path = env::current_exe().expect("无法获取可执行文件路径");
-    let exe_dir = exe_path.parent().expect("无法获取可执行文件所在目录");
-    exe_dir.join("locales")
+    local
 }
 
 impl I18n {
