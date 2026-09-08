@@ -240,11 +240,11 @@ pub fn tr(key: &str, param_names: &[&str], param_values: Vec<String>) -> String 
 // 自动检测系统语言。规范化输出完整 BCP47 标签（如 zh-CN / en-US）。
 // 未知 / 空 / C / POSIX 一律回退 en-US，保证后续 I18n::new 必有文件可加载。
 pub fn detect_lang() -> String {
-    // 优先读取 LC_ALL，其次 LANG
-    let raw = env::var("LC_ALL")
+    // 优先读取 LANG，其次 LC_ALL
+    let raw = env::var("LANG")
         .ok()
         .filter(|v| !v.is_empty())
-        .or_else(|| env::var("LANG").ok().filter(|v| !v.is_empty()))
+        .or_else(|| env::var("LC_ALL").ok().filter(|v| !v.is_empty()))
         .unwrap_or_else(|| "en-US".to_string());
     // 移除编码部分（如 zh_CN.UTF-8 → zh_CN）
     let tag = raw.split('.').next().unwrap_or("en-US");
@@ -272,18 +272,24 @@ mod tests {
         assert_eq!(s, "this-key-does-not-exist");
     }
 
-    // BUG 1 回归：detect_lang 对空 / C / POSIX 规范化为 en-US。
+    // BUG 1 回归：detect_lang 对空 / C / POSIX 规范化为 en-US；且 LANG 优先于 LC_ALL。
     #[test]
     fn detect_lang_normalizes_c_and_empty() {
-        // LC_ALL 优先；此处通过临时设置环境变量验证规范化逻辑
+        // LANG 优先；此处通过临时设置环境变量验证规范化逻辑
         // （detect_lang 是纯函数式读取环境，无全局状态，安全）
         let cases = [("C", "en-US"), ("POSIX", "en-US"), ("C.UTF-8", "en-US")];
         for (val, expect) in cases {
-            env::set_var("LC_ALL", val);
-            assert_eq!(detect_lang(), expect, "LC_ALL={} 时", val);
+            env::set_var("LANG", val);
+            env::remove_var("LC_ALL");
+            assert_eq!(detect_lang(), expect, "LANG={} 时", val);
         }
-        env::set_var("LC_ALL", "");
-        env::set_var("LANG", "en_US.UTF-8");
+        // LANG 优先于 LC_ALL：即使 LC_ALL 设中文，LANG 设 C 仍应取 LANG
+        env::set_var("LANG", "C");
+        env::set_var("LC_ALL", "zh_CN.UTF-8");
+        assert_eq!(detect_lang(), "en-US", "LANG=C 应优先于 LC_ALL=zh_CN");
+        // LANG 空时回退读 LC_ALL
+        env::set_var("LANG", "");
+        env::set_var("LC_ALL", "en_US.UTF-8");
         assert_eq!(detect_lang(), "en-US");
         env::remove_var("LC_ALL");
         env::remove_var("LANG");
