@@ -16,59 +16,62 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-windows:
-
-    runs-on: windows-2022
-
+  # ✅ 合并为一个 job，通过矩阵区分系统
+  build:
+    name: build-${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            name: windows
+            binary: rt.exe
+          - os: ubuntu-latest
+            name: linux
+            binary: rt
+    runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --release
-    - name: Upload a Build Artifact
-      uses: actions/upload-artifact@v7.0.1
-      with:
-        name: windows
-        path: |
-          target/release/locales
-          target/release/rt.exe
-          
-  build-linux:
-
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --release
-    - name: Copy shell script
-      run: |
-        chmod +x *.sh
-        cp *.sh target/release
-    - name: Upload a Build Artifact
-      uses: actions/upload-artifact@v7.0.1
-      with:
-        name: linux
-        path: |
-          target/release/locales
-          target/release/rt
-          target/release/*.sh
-  build-dpkg:
-      runs-on: ubuntu-latest
-
-      steps:
       - uses: actions/checkout@v4
-      - run: cargo install cargo-deb
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
       - name: Build
-        run: cargo deb
-      - name: Upload a Build Artifact
+        run: cargo build --release
+
+      # ✅ 仅 Linux 执行，利用 runner.os 判断
+      - name: Copy shell script(Linux)
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x *.sh
+          cp *.sh target/release
+
+      - name: Build Debian Package
+        if: runner.os == 'Linux'
+        run: |
+          cargo install cargo-deb
+          cargo deb --no-build
+
+      - name: Upload Debian Package
         uses: actions/upload-artifact@v7.0.1
+        if: runner.os == 'Linux'
         with:
           name: debian
-          path: target/debian/*.deb
+          path: |
+            target/debian/*.deb
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            target/release/locales
+            target/release/${{ matrix.binary }}
+            target/release/*.sh
 
   release:
     name: 发行
-    needs: [build-linux, build-windows, build-dpkg]
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -77,18 +80,16 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: .
-      
-      - name: 重新压缩(Linux)
+
+      # ✅ 合并为循环，避免重复步骤
+      - name: 重新压缩
         run: |
-          cd linux && zip -r "../rustree-linux.zip" .
-    
-      - name: 重新压缩(Windows)
-        run: |
-          cd windows && zip -r "../rustree-windows.zip" .
+          for dir in linux windows; do
+            [ -d "$dir" ] && (cd "$dir" && zip -r "../rustree-$dir.zip" .)
+          done
 
       - name: 移动文件(Debian 包)
-        run: |
-          mv debian/*.deb .
+        run: mv debian/*.deb .
 
       - name: 自动发布发行版
         uses: softprops/action-gh-release@v2
@@ -98,6 +99,5 @@ jobs:
           draft: false
           make_latest: true
           files: |
-            rustree-linux.zip
-            rustree-windows.zip
+            rustree-*.zip
             *.deb

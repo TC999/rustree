@@ -9,37 +9,55 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-windows:
-    runs-on: windows-2022
+  # ✅ 合并为一个 job，通过矩阵区分系统
+  build:
+    name: build-${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            name: windows
+          - os: ubuntu-latest
+            name: linux
 
+    runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --release
-    - name: Upload a Build Artifact
-      uses: actions/upload-artifact@v7.0.1
-      with:
-        name: rustree-windows-x64
-        path: |
-          target/release/locales
-          target/release/rt.exe
-    
-  build-linux:
+      - uses: actions/checkout@v4
 
-    runs-on: ubuntu-latest
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
 
-    steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --release
-    - name: Copy shell script
-      run: |
-        cp -r *.sh target/release
-    - name: Upload a Build Artifact
-      uses: actions/upload-artifact@v7.0.1
-      with:
-        name: rustree-linux-x64
-        path: |
-          target/release/locales
-          target/release/rt
-          target/release/*.sh
+      - name: Build
+        run: cargo build --release
+
+      # ✅ 仅 Linux 执行，利用 runner.os 判断
+      - name: Copy shell script(Linux)
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x *.sh
+          cp *.sh target/release
+
+      - name: Build Debian Package
+        if: runner.os == 'Linux'
+        run: |
+          cargo install cargo-deb
+          cargo deb --no-build
+
+      - name: Upload Debian Package
+        uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: rustree-debian-x64
+          path: |
+            target/debian/*.deb
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustree-${{ matrix.name }}-x64
+          path: |
+            target/release/locales
+            target/release/rt
+            target/release/rt.exe
+            target/release/*.sh
