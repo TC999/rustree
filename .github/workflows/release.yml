@@ -67,7 +67,7 @@ jobs:
           path: |
             target/release/locales
             target/release/${{ matrix.binary }}
-            target/release/*.sh   # Windows 下无匹配文件会自动忽略
+            target/release/*.sh
 
   release:
     name: 发行
