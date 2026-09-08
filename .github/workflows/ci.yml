@@ -9,7 +9,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  jobs:
   # ✅ 合并为一个 job，通过矩阵区分系统
   build:
     name: build-${{ matrix.name }}
