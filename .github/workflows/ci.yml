@@ -45,19 +45,19 @@ jobs:
           cargo deb --no-build
 
       - name: Upload Debian Package
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v4
         if: runner.os == 'Linux'
         with:
-          name: debian
+          name: rustree-debian-x64
           path: |
             target/debian/*.deb
 
       - name: Upload Build Artifact
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v4
         with:
           name: rustree-${{ matrix.name }}-x64
           path: |
             target/release/locales
             target/release/rt
             target/release/rt.exe
-            target/release/*.sh   # Windows 下无匹配文件会自动忽略
+            target/release/*.sh
