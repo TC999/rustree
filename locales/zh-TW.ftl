@@ -19,7 +19,7 @@ invalid-filename = rt: 無效的檔案名稱 '{f}'
 filelimit-exceeded = {n} 個項目超過檔案數量限制，不開啟此目錄
 recursive-not-followed = 遞迴，未跟隨
 valid-charsets = 有效的字元集包括：
-report-unit =  bytes
+report-unit =  位元組
 
 # ---- 目錄統計報告（unix_report / html_report）----
 # 四種變體：du（--du 時含 size 前綴）與非 du；full（含檔案數）與 dirs（-d 時）
