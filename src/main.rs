@@ -1123,7 +1123,7 @@ fn long_arg<'a>(args: &'a [String], i: usize, j: &mut usize, n: &mut usize, pref
 
 // === 原 C 函数：void usage(int n) ===
 /// 打印使用说明。n < 2 时输出到 stderr（错误时），否则 stdout 并 exit(0)。
-// 帮助文本逐行消息 ID（每行一条 FTL 消息，见 locales/en.ftl 与 locales/zh-CN.ftl；
+// 帮助文本逐行消息 ID（每行一条消息，见 locales/en-US.ftl 与 locales/zh-CN.ftl；
 // 参照 riptree 的语言文件风格拆分，便于逐行维护与翻译）
 const USAGE_HELP_LINES: &[&str] = &[
     "help-listing-options",

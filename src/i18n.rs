@@ -1,12 +1,10 @@
-use std::fs;
+use std::collections::HashMap;
 use std::env;
+use std::fs;
 use std::path::PathBuf;
-use fluent_bundle::{FluentBundle, FluentResource, FluentArgs};
-use fluent_bundle::types::FluentNumber;
-use unic_langid::LanguageIdentifier;
 
 pub struct I18n {
-    bundle: FluentBundle<FluentResource>,
+    messages: HashMap<String, String>,
     #[allow(dead_code)]
     lang: String,
 }
@@ -38,30 +36,92 @@ fn get_locales_dir() -> PathBuf {
     local
 }
 
+// 语言文件格式（*.ftl）：
+//   - 每行一条 `key = value`；`#` 开头为注释，空行忽略。
+//   - `=` 后第一个空格是语法分隔符，其后所有内容（含前导空格）均为值的一部分。
+//   - 值中 `{name}` 为变量占位符，运行时由 tr! 传入的参数替换。
+//   - 转义序列：\n \t \r \b \f \\ 以及 \uXXXX（Unicode 码点）。
+//     \b / \f / \r 分别对应 color::fancy 解释的粗体 / 斜体 / 结束颜色控制符。
+fn parse(source: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for raw_line in source.lines() {
+        if raw_line.is_empty() || raw_line.starts_with('#') {
+            continue;
+        }
+        if let Some(eq) = raw_line.find('=') {
+            let key = raw_line[..eq].trim_end();
+            let rest = &raw_line[eq + 1..];
+            // 剥离 `=` 后的一个分隔空格；余下内容（含缩进/前导空格）均为值
+            let value = unescape(rest.strip_prefix(' ').unwrap_or(rest));
+            map.insert(key.to_string(), value);
+        }
+    }
+    map
+}
+
+// 还原转义序列为真实字符。
+fn unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('r') => out.push('\r'),
+            Some('b') => out.push('\u{8}'),
+            Some('f') => out.push('\u{c}'),
+            Some('\\') => out.push('\\'),
+            Some('u') => {
+                let hex: String = chars.by_ref().take(4).collect();
+                match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+                    Some(ch) => out.push(ch),
+                    None => {
+                        out.push('\\');
+                        out.push('u');
+                        out.push_str(&hex);
+                    }
+                }
+            }
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
+// 将模板中的 {name} 占位符替换为对应参数值。
+fn substitute(template: &str, names: &[&str], values: &[String]) -> String {
+    let mut out = template.to_string();
+    for (name, value) in names.iter().zip(values.iter()) {
+        out = out.replace(&format!("{{{}}}", name), value);
+    }
+    out
+}
+
 impl I18n {
     pub fn new(lang: &str) -> Self {
-        let langid: LanguageIdentifier = lang.parse().unwrap();
         let path = get_locales_dir().join(format!("{}.ftl", lang));
         let source = fs::read_to_string(&path)
             .unwrap_or_else(|_| panic!("语言文件未找到: {:?}", path));
-        let res = FluentResource::try_new(source)
-            .unwrap_or_else(|_| panic!("Fluent资源解析失败: {:?}", path));
-        let mut bundle = FluentBundle::new(vec![langid]);
-        bundle.add_resource(res).expect("添加Fluent资源失败");
         Self {
-            bundle,
+            messages: parse(&source),
             lang: lang.to_string(),
         }
     }
 
-    pub fn text(&self, key: &str, args: Option<&FluentArgs>) -> String {
-        let msg = self.bundle.get_message(key).expect("未找到消息");
-        let pattern = msg.value().expect("未找到内容");
-        let s = self
-            .bundle
-            .format_pattern(pattern, args, &mut vec![]);
-        // 剥离 Fluent 的隔离标记 U+2068 / U+2069
-        s.replace(['\u{2068}', '\u{2069}'], "").to_string()
+    pub fn text(&self, key: &str, names: &[&str], values: &[String]) -> String {
+        let template = self
+            .messages
+            .get(key)
+            .unwrap_or_else(|| panic!("未找到消息: {}", key));
+        substitute(template, names, values)
     }
 }
 
@@ -73,29 +133,16 @@ pub static mut ACTIVE_LANG: &str = "en";
 #[cfg(test)]
 pub static TEST_SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-// 将 `to_string()` 后的值转为 FluentValue：纯数字用 Int，否则用 String
-// （这样 FTL 的 Select Expression [one]/[other] 才能正确匹配复数）
-pub fn to_fluent_value(v: &str) -> fluent_bundle::FluentValue<'_> {
-    if let Ok(n) = v.parse::<i64>() {
-        let num = FluentNumber::new(n as f64, fluent_bundle::types::FluentNumberOptions::default());
-        fluent_bundle::FluentValue::Number(num)
-    } else {
-        fluent_bundle::FluentValue::from(v)
-    }
-}
-
 #[macro_export]
 macro_rules! tr {
     ($key:literal) => {
-        $crate::i18n::tr($key, &[], std::vec::Vec::new())
+        $crate::i18n::tr($key, &[], Vec::new())
     };
     ($key:literal, $($arg:literal => $val:expr),+ $(,)?) => {
         $crate::i18n::tr(
             $key,
             &[$($arg),+],
-            vec![ $(
-                $crate::i18n::to_fluent_value($val.to_string().as_str()),
-            )+ ]
+            vec![$($val.to_string()),+]
         )
     };
 }
@@ -130,21 +177,10 @@ pub fn lang() -> &'static str {
 }
 
 // 带命名参数的格式化调用（参数以 (name, value) 对传入）
-pub fn tr(
-    key: &str,
-    _param_names: &[&str],
-    param_values: Vec<fluent_bundle::FluentValue<'_>>,
-) -> String {
+pub fn tr(key: &str, param_names: &[&str], param_values: Vec<String>) -> String {
     unsafe {
         let bundle = BUNDLE.as_ref().expect("i18n 尚未初始化");
-        if param_values.is_empty() {
-            return bundle.text(key, None);
-        }
-        let mut args = FluentArgs::new();
-        for (name, value) in _param_names.iter().zip(param_values.iter()) {
-            args.set(name.to_string(), value.clone());
-        }
-        bundle.text(key, Some(&args))
+        bundle.text(key, param_names, &param_values)
     }
 }
 
@@ -155,7 +191,7 @@ pub fn detect_lang() -> String {
         .or_else(|_| env::var("LANG"))
         .unwrap_or_else(|_| "en-US".to_string())
         .split('.')
-        .next()  // 移除编码部分
+        .next() // 移除编码部分
         .unwrap_or("en-US")
         .replace('_', "-") // 变成 zh-CN 这种格式
 }
